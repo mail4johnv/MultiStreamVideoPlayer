@@ -1,0 +1,32 @@
+<Project Sdk="Microsoft.NET.Sdk">
+
+  <PropertyGroup>
+    <OutputType>WinExe</OutputType>
+    <TargetFramework>net8.0-windows</TargetFramework>
+    <Nullable>enable</Nullable>
+    <ImplicitUsings>enable</ImplicitUsings>
+    <UseWPF>true</UseWPF>
+    <ApplicationManifest>app.manifest</ApplicationManifest>
+    <Platforms>AnyCPU;x64</Platforms>
+  </PropertyGroup>
+
+  <ItemGroup>
+    <Compile Remove="TimeLineSample\**" />
+    <EmbeddedResource Remove="TimeLineSample\**" />
+    <None Remove="TimeLineSample\**" />
+    <Page Remove="TimeLineSample\**" />
+  </ItemGroup>
+
+  <ItemGroup>
+    <PackageReference Include="CommunityToolkit.Mvvm" Version="8.2.2" />
+  </ItemGroup>
+
+  <ItemGroup>
+    <ProjectReference Include="..\MediaFoundation.Player\MediaFoundation.Player.vcxproj" />
+  </ItemGroup>
+
+  <Target Name="CopyMSDx11Renderer" AfterTargets="Build">
+    <Copy SourceFiles="$(SolutionDir)bin\x64\$(Configuration)\MSDx11VideoRenderer.dll" DestinationFolder="$(OutDir)" SkipUnchangedFiles="true" Condition="Exists('$(SolutionDir)bin\x64\$(Configuration)\MSDx11VideoRenderer.dll')" />
+  </Target>
+
+</Project>

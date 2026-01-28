@@ -1,0 +1,54 @@
+﻿
+Microsoft Visual Studio Solution File, Format Version 12.00
+# Visual Studio Version 17
+VisualStudioVersion = 17.13.35913.81
+MinimumVisualStudioVersion = 10.0.40219.1
+Project("{FAE04EC0-301F-11D3-BF4B-00C04F79EFBC}") = "MultiStreamVideoPlayer", "MultiStreamVideoPlayer\MultiStreamVideoPlayer.csproj", "{76B58AB5-A834-9B01-DE3C-35D3C1042AFF}"
+EndProject
+Project("{8BC9CEB8-8B4A-11D0-8D11-00A0C91BC942}") = "MediaFoundation.Player", "MediaFoundation.Player\MediaFoundation.Player.vcxproj", "{8BC9CEB8-8B4A-11D0-8D11-00A0C91BC942}"
+	ProjectSection(ProjectDependencies) = postProject
+		{A1B2C3D4-E5F6-0123-4567-890ABCDEF012} = {A1B2C3D4-E5F6-0123-4567-890ABCDEF012}
+	EndProjectSection
+EndProject
+Project("{8BC9CEB8-8B4A-11D0-8D11-00A0C91BC942}") = "DX11VideoRenderer", "DX11VideoRenderer\DX11VideoRenderer.vcxproj", "{A1B2C3D4-E5F6-0123-4567-890ABCDEF012}"
+EndProject
+Global
+	GlobalSection(SolutionConfigurationPlatforms) = preSolution
+		Debug|Any CPU = Debug|Any CPU
+		Debug|x64 = Debug|x64
+		Release|Any CPU = Release|Any CPU
+		Release|x64 = Release|x64
+	EndGlobalSection
+	GlobalSection(ProjectConfigurationPlatforms) = postSolution
+		{76B58AB5-A834-9B01-DE3C-35D3C1042AFF}.Debug|Any CPU.ActiveCfg = Debug|Any CPU
+		{76B58AB5-A834-9B01-DE3C-35D3C1042AFF}.Debug|Any CPU.Build.0 = Debug|Any CPU
+		{76B58AB5-A834-9B01-DE3C-35D3C1042AFF}.Debug|x64.ActiveCfg = Debug|x64
+		{76B58AB5-A834-9B01-DE3C-35D3C1042AFF}.Debug|x64.Build.0 = Debug|x64
+		{76B58AB5-A834-9B01-DE3C-35D3C1042AFF}.Release|Any CPU.ActiveCfg = Release|Any CPU
+		{76B58AB5-A834-9B01-DE3C-35D3C1042AFF}.Release|Any CPU.Build.0 = Release|Any CPU
+		{76B58AB5-A834-9B01-DE3C-35D3C1042AFF}.Release|x64.ActiveCfg = Release|x64
+		{76B58AB5-A834-9B01-DE3C-35D3C1042AFF}.Release|x64.Build.0 = Release|x64
+		{8BC9CEB8-8B4A-11D0-8D11-00A0C91BC942}.Debug|Any CPU.ActiveCfg = Debug|x64
+		{8BC9CEB8-8B4A-11D0-8D11-00A0C91BC942}.Debug|Any CPU.Build.0 = Debug|x64
+		{8BC9CEB8-8B4A-11D0-8D11-00A0C91BC942}.Debug|x64.ActiveCfg = Debug|x64
+		{8BC9CEB8-8B4A-11D0-8D11-00A0C91BC942}.Debug|x64.Build.0 = Debug|x64
+		{8BC9CEB8-8B4A-11D0-8D11-00A0C91BC942}.Release|Any CPU.ActiveCfg = Release|x64
+		{8BC9CEB8-8B4A-11D0-8D11-00A0C91BC942}.Release|Any CPU.Build.0 = Release|x64
+		{8BC9CEB8-8B4A-11D0-8D11-00A0C91BC942}.Release|x64.ActiveCfg = Release|x64
+		{8BC9CEB8-8B4A-11D0-8D11-00A0C91BC942}.Release|x64.Build.0 = Release|x64
+		{A1B2C3D4-E5F6-0123-4567-890ABCDEF012}.Debug|Any CPU.ActiveCfg = Debug|x64
+		{A1B2C3D4-E5F6-0123-4567-890ABCDEF012}.Debug|Any CPU.Build.0 = Debug|x64
+		{A1B2C3D4-E5F6-0123-4567-890ABCDEF012}.Debug|x64.ActiveCfg = Debug|x64
+		{A1B2C3D4-E5F6-0123-4567-890ABCDEF012}.Debug|x64.Build.0 = Debug|x64
+		{A1B2C3D4-E5F6-0123-4567-890ABCDEF012}.Release|Any CPU.ActiveCfg = Release|x64
+		{A1B2C3D4-E5F6-0123-4567-890ABCDEF012}.Release|Any CPU.Build.0 = Release|x64
+		{A1B2C3D4-E5F6-0123-4567-890ABCDEF012}.Release|x64.ActiveCfg = Release|x64
+		{A1B2C3D4-E5F6-0123-4567-890ABCDEF012}.Release|x64.Build.0 = Release|x64
+	EndGlobalSection
+	GlobalSection(SolutionProperties) = preSolution
+		HideSolutionNode = FALSE
+	EndGlobalSection
+	GlobalSection(ExtensibilityGlobals) = postSolution
+		SolutionGuid = {DC862422-DE88-4B18-B72D-4F22BD8BAFC8}
+	EndGlobalSection
+EndGlobal
