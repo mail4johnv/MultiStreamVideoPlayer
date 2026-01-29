@@ -1,0 +1,9 @@
+{
+  "profiles": {
+    "MultiStreamVideoPlayer": {
+      "commandName": "Project",
+      "commandLineArgs": "> kk1.txt",
+      "nativeDebugging": true
+    }
+  }
+}

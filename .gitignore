@@ -1,0 +1,22 @@
+﻿################################################################################
+# This .gitignore file was automatically created by Microsoft(R) Visual Studio.
+################################################################################
+
+/.vs
+/bin
+/MediaFoundation.Player/bin
+/MediaFoundation.Player/obj
+/MultiStreamVideoPlayer/bin
+/MultiStreamVideoPlayer/obj
+/CaptureDebugOutput.ps1
+/NativeMediaPlayer.cs.txt
+/DX11VideoRenderer/obj
+/DX11VideoRenderer/bin
+/DX11VideoRenderer_in/cpp/.vs
+/DX11VideoRenderer_in/cpp/DX11Vide.ED9D0263/x64/Debug
+/DX11VideoRenderer_in/cpp/x64/Debug
+/.vscode
+/DX11VideoRenderer_in/cpp/bin/x64/Debug
+/DX11VideoRenderer_in/cpp/MSDx11Vi.ED9D0263/x64/Debug/MSDx11Vi.ED9D0263.tlog
+/DX11VideoRenderer_in/cpp/MSDx11Vi.ED9D0263/x64/Debug
+/DX11VideoRenderer_inOld
