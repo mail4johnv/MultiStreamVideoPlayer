@@ -137,47 +137,47 @@ Debug logging added to trace DX11 renderer execution. View with DebugView (Sysin
 ```
 ┌─────────────────────────────────────────────────────────────────┐
 │ WPF Application (MultiStreamVideoPlayer)                        │
-│                                                                  │
+│                                                                 │
 │  ┌───────────────────────────────────────────────────────────┐  │
-│  │ MainViewModel (MVVM)                                       │  │
-│  │  - Video stream management                                 │  │
-│  │  - Playback control                                        │  │
-│  │  - Timeline synchronization                                │  │
+│  │ MainViewModel (MVVM)                                      │  │
+│  │  - Video stream management                                │  │
+│  │  - Playback control                                       │  │
+│  │  - Timeline synchronization                               │  │
 │  └───────────────────────────────────────────────────────────┘  │
-│                              │                                   │
+│                              │                                  │
 │  ┌───────────────────────────▼───────────────────────────────┐  │
-│  │ NativeMediaPlayer (HwndHost)                               │  │
-│  │  - WPF Dependency Properties                               │  │
-│  │  - Event Handling                                          │  │
-│  │  - HWND Management                                         │  │
+│  │ NativeMediaPlayer (HwndHost)                              │  │
+│  │  - WPF Dependency Properties                              │  │
+│  │  - Event Handling                                         │  │
+│  │  - HWND Management                                        │  │
 │  └───────────────────────────┬───────────────────────────────┘  │
 └──────────────────────────────┼──────────────────────────────────┘
                                │ .NET Interop
 ┌──────────────────────────────▼──────────────────────────────────┐
-│ MediaFoundation.Player (C++/CLI)                                 │
-│                                                                  │
+│ MediaFoundation.Player (C++/CLI)                                │
+│                                                                 │
 │  ┌───────────────────────────────────────────────────────────┐  │
-│  │ VideoPlayer Class                                          │  │
-│  │  - IMFMediaSession                                         │  │
-│  │  - IMFMediaSource                                          │  │
-│  │  - IMFTopology                                             │  │
-│  │  - IMFVideoDisplayControl (EVR)                            │  │
+│  │ VideoPlayer Class                                         │  │
+│  │  - IMFMediaSession                                        │  │
+│  │  - IMFMediaSource                                         │  │
+│  │  - IMFTopology                                            │  │
+│  │  - IMFVideoDisplayControl (EVR)                           │  │
 │  └───────────────────────────┬───────────────────────────────┘  │
 └──────────────────────────────┼──────────────────────────────────┘
                                │ COM Interfaces
 ┌──────────────────────────────▼──────────────────────────────────┐
-│ Windows Media Foundation (Native)                                │
-│                                                                  │
-│  ┌────────────────┐  ┌────────────────┐  ┌────────────────┐    │
-│  │ Source         │  │ Topology       │  │ Session        │    │
-│  │ Resolver       │  │ Builder        │  │ Manager        │    │
-│  └────────────────┘  └────────────────┘  └────────────────┘    │
-│                                                                  │
-│  ┌────────────────┐  ┌────────────────┐  ┌────────────────┐    │
-│  │ EVR            │  │ SAR            │  │ Presentation   │    │
-│  │ (Video)        │  │ (Audio)        │  │ Clock          │    │
-│  └────────────────┘  └────────────────┘  └────────────────┘    │
-└──────────────────────────────────────────────────────────────────┘
+│ Windows Media Foundation (Native)                               │
+│                                                                 │
+│  ┌────────────────┐  ┌────────────────┐  ┌────────────────┐     │
+│  │ Source         │  │ Topology       │  │ Session        │     │
+│  │ Resolver       │  │ Builder        │  │ Manager        │     │
+│  └────────────────┘  └────────────────┘  └────────────────┘     │
+│                                                                 │
+│  ┌────────────────┐  ┌────────────────┐  ┌────────────────┐     │
+│  │ EVR            │  │ SAR            │  │ Presentation   │     │
+│  │ (Video)        │  │ (Audio)        │  │ Clock          │     │
+│  └────────────────┘  └────────────────┘  └────────────────┘     │ 
+└─────────────────────────────────────────────────────────────────┘
 ```
 
 ---
