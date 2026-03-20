@@ -2,6 +2,7 @@
 
 A professional multi-stream video player application built with WPF/.NET 8 and Windows Media Foundation, capable of displaying and synchronizing playback of up to 16 video streams simultaneously.
 
+
 ## Solution Structure
 
 ```
