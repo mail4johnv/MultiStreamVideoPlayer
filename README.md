@@ -6,6 +6,66 @@ A professional multi-stream video player application built with WPF/.NET 8 and W
 
 - **2026-04-12 23:51:57 IST**: Added real-time video sharpening (luma-only) to the DX11 renderer, including `Sharpen` and `Threshold` sliders in WPF with live value labels and paused-frame update support.
 
+### Video Sharpening Update (What Was Implemented)
+
+The following sharpening-related updates were added across the solution:
+
+1. **Luma-only HLSL sharpen pass (DX11 renderer)**
+  - Added a post-process pixel shader in `DX11VideoRenderer/Presenter.cpp`.
+  - Shader converts RGB to YCbCr, applies Laplacian sharpening on **Y (luma) only**, then converts back to RGB.
+  - This avoids chroma noise/ringing while improving edge detail.
+
+2. **Runtime sharpening parameters via constant buffer**
+  - Added `SharpenSettings` constant buffer (`b0`) with:
+    - `fSharpenStrength`
+    - `fThreshold`
+  - Host-side settings are updated per frame using `ID3D11DeviceContext::UpdateSubresource`.
+
+3. **Pipeline integration in presenter**
+  - Sharpen is applied after video processor output inside `CPresenter`.
+  - Added dedicated resources for post-processing (fullscreen shaders, sampler, intermediate texture/SRV, settings buffer).
+
+4. **WPF UI controls for sharpening**
+  - Added two sliders in `MultiStreamVideoPlayer/Views/MainWindow.xaml`:
+    - `Sharpen` (strength)
+    - `Threshold`
+  - Added live numeric labels beside each slider.
+  - Added min/max constraints in `MainViewModel`:
+    - Strength: `0.0` to `1.0`
+    - Threshold: `0.0` to `0.02`
+
+5. **Managed/native propagation path**
+  - Slider values flow through:
+    - `MainViewModel` → `NativeMediaPlayer` dependency properties
+    - `MediaFoundation.Player::VideoPlayer` (`SharpenStrength`, `SharpenThreshold`)
+    - packed into `SetRenderingPrefs` payload
+    - decoded in DX11 presenter and applied to shader constants.
+
+6. **Paused-frame sharpening updates**
+  - Slider changes trigger repaint while paused.
+  - Fixed cumulative sharpening while paused by reusing the last unsharpened source frame for re-application.
+
+7. **Upside-down output fix**
+  - Corrected fullscreen pass UV mapping in the sharpen pass so processed output is no longer vertically inverted.
+
+#### Recommended Sharpening Presets
+
+- **Subtle**
+  - `Sharpen`: `0.35`
+  - `Threshold`: `0.010`
+
+- **Balanced**
+  - `Sharpen`: `0.60`
+  - `Threshold`: `0.004`
+
+- **Aggressive**
+  - `Sharpen`: `0.90`
+  - `Threshold`: `0.000`
+
+Tip:
+- For noisy/low-light footage, increase `Threshold` first.
+- For clean footage, increase `Sharpen` first.
+
 
 ## Solution Structure
 
