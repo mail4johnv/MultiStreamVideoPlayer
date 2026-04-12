@@ -2,6 +2,10 @@
 
 A professional multi-stream video player application built with WPF/.NET 8 and Windows Media Foundation, capable of displaying and synchronizing playback of up to 16 video streams simultaneously.
 
+## Session Updates
+
+- **2026-04-12 23:51:57 IST**: Added real-time video sharpening (luma-only) to the DX11 renderer, including `Sharpen` and `Threshold` sliders in WPF with live value labels and paused-frame update support.
+
 
 ## Solution Structure
 
