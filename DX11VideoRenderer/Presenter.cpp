@@ -16,9 +16,111 @@
 #include <stdio.h>
 #include <io.h>
 #include <fcntl.h>
+#include <cstring>
+#include <d3dcompiler.h>
 
 using namespace DX11VideoRenderer;
 #define DebugLog LOG_DEBUG
+
+#pragma comment(lib, "d3dcompiler.lib")
+
+namespace
+{
+    // Luma-only sharpening: RGB -> YCbCr, sharpen Y with 3x3 Laplacian, then YCbCr -> RGB.
+    static const char* g_lumaSharpenShaderSrc = R"(
+cbuffer SharpenSettings : register(b0)
+{
+    float fSharpenStrength;
+    float fThreshold;
+    float2 _Padding;
+};
+
+Texture2D InputTex : register(t0);
+SamplerState LinearSampler : register(s0);
+
+struct VSOut
+{
+    float4 Pos : SV_POSITION;
+    float2 UV  : TEXCOORD0;
+};
+
+VSOut VSMain(uint vertexId : SV_VertexID)
+{
+    VSOut o;
+    float2 p;
+
+    if (vertexId == 0)
+    {
+        p = float2(-1.0, -1.0);
+    }
+    else if (vertexId == 1)
+    {
+        p = float2(-1.0, 3.0);
+    }
+    else
+    {
+        p = float2(3.0, -1.0);
+    }
+
+    o.Pos = float4(p, 0.0, 1.0);
+    o.UV = float2(0.5 * (p.x + 1.0), 0.5 * (1.0 - p.y));
+    return o;
+}
+
+float ComputeLuma(float3 rgb)
+{
+    // Rec.709 luma coefficients.
+    return dot(rgb, float3(0.2126, 0.7152, 0.0722));
+}
+
+float3 RGBToYCbCr(float3 rgb)
+{
+    float Y = ComputeLuma(rgb);
+    float Cb = (rgb.b - Y) / 1.8556;
+    float Cr = (rgb.r - Y) / 1.5748;
+    return float3(Y, Cb, Cr);
+}
+
+float3 YCbCrToRGB(float3 ycc)
+{
+    float Y = ycc.x;
+    float Cb = ycc.y;
+    float Cr = ycc.z;
+
+    float R = Y + 1.5748 * Cr;
+    float B = Y + 1.8556 * Cb;
+    float G = (Y - 0.2126 * R - 0.0722 * B) / 0.7152;
+    return float3(R, G, B);
+}
+
+float4 PSMain(VSOut input) : SV_TARGET
+{
+    uint w, h;
+    InputTex.GetDimensions(w, h);
+    float2 texel = 1.0 / float2((float)w, (float)h);
+
+    float3 rgb = InputTex.Sample(LinearSampler, input.UV).rgb;
+    float3 ycc = RGBToYCbCr(rgb);
+    float centerY = ycc.x;
+
+    float top = ComputeLuma(InputTex.Sample(LinearSampler, input.UV + float2(0.0, -texel.y)).rgb);
+    float left = ComputeLuma(InputTex.Sample(LinearSampler, input.UV + float2(-texel.x, 0.0)).rgb);
+    float right = ComputeLuma(InputTex.Sample(LinearSampler, input.UV + float2(texel.x, 0.0)).rgb);
+    float bottom = ComputeLuma(InputTex.Sample(LinearSampler, input.UV + float2(0.0, texel.y)).rgb);
+
+    // 3x3 Laplacian (4-neighbor form) on luma only.
+    float laplacian = (4.0 * centerY) - (top + left + right + bottom);
+
+    // Threshold suppresses low-amplitude grain/noise sharpening.
+    float edgeMask = step(fThreshold, abs(laplacian));
+    float sharpenedY = saturate(centerY + (fSharpenStrength * laplacian * edgeMask));
+
+    float3 outYcc = float3(sharpenedY, ycc.y, ycc.z);
+    float3 outRgb = saturate(YCbCrToRGB(outYcc));
+    return float4(outRgb, 1.0);
+}
+)";
+}
 
 // Debug output helper - prints to both debug output and console (if available)
 //static void DebugLog(const char* format, ...)
@@ -86,7 +188,18 @@ CPresenter::CPresenter() :
     m_pVideoProcessor(nullptr),
     m_pStagingTexture(nullptr),
     m_stagingFormat(DXGI_FORMAT_NV12),
+    m_pFullscreenVS(nullptr),
+    m_pSharpenPS(nullptr),
+    m_pLinearSampler(nullptr),
+    m_pSharpenSettingsBuffer(nullptr),
+    m_pSharpenIntermediateTexture(nullptr),
+    m_pSharpenIntermediateSRV(nullptr),
+    m_bHasSharpenSource(FALSE),
+    m_userSliderValue(0.0f),
+    m_userThreshold(0.0f),
+    m_bSharpenEnabled(TRUE),
     m_bFullScreenState(FALSE),
+    m_dwRenderingPrefs(0),
     m_bCanProcessNextSample(TRUE),
     m_bDeviceChanged(FALSE),
     m_imageWidthInPixels(0),
@@ -231,6 +344,16 @@ HRESULT CPresenter::RepaintVideo()
         DebugLog("[CUSTOM_DX11Presenter] RepaintVideo: Client rect = %dx%d\n", rcClient.right, rcClient.bottom);
     }
     
+    // Re-apply sharpen to current backbuffer so paused-frame slider changes are visible.
+    if (m_bSharpenEnabled)
+    {
+        HRESULT hrSharpen = ApplySharpenPass(false);
+        if (FAILED(hrSharpen))
+        {
+            DebugLog("[CUSTOM_DX11Presenter] RepaintVideo: ApplySharpenPass failed: 0x%08X\n", hrSharpen);
+        }
+    }
+
     // Present the current frame again
     hr = PresentFrame();
     DebugLog("[CUSTOM_DX11Presenter] RepaintVideo: PresentFrame returned 0x%08X\n", hr);
@@ -251,6 +374,55 @@ HRESULT CPresenter::SetFullscreen(BOOL fFullscreen)
     SafeRelease(m_pVideoProcessorEnum);
     SafeRelease(m_pVideoDevice);
     
+    return S_OK;
+}
+
+HRESULT CPresenter::SetRenderingPrefs(DWORD dwRenderingPrefs)
+{
+    CAutoLock lock(&m_critSec);
+
+    HRESULT hr = CheckShutdown();
+    if (FAILED(hr))
+    {
+        return hr;
+    }
+
+    m_dwRenderingPrefs = dwRenderingPrefs;
+
+    // Custom extension transport:
+    // low 16 bits => sharpen strength [0..1] in milli-units
+    // high 16 bits => threshold [0..0.02] in milli-units
+    float slider = static_cast<float>(dwRenderingPrefs & 0xFFFFu) / 1000.0f;
+    float thresholdNorm = static_cast<float>((dwRenderingPrefs >> 16) & 0xFFFFu) / 1000.0f;
+
+    if (slider < 0.0f) slider = 0.0f;
+    if (slider > 1.0f) slider = 1.0f;
+    if (thresholdNorm < 0.0f) thresholdNorm = 0.0f;
+    if (thresholdNorm > 1.0f) thresholdNorm = 1.0f;
+
+    m_userSliderValue = slider;
+    m_userThreshold = thresholdNorm * 0.02f;
+
+    DebugLog("[DX11Presenter] SetRenderingPrefs: raw=0x%08X slider=%.3f threshold=%.4f\n", dwRenderingPrefs, m_userSliderValue, m_userThreshold);
+    return S_OK;
+}
+
+HRESULT CPresenter::GetRenderingPrefs(DWORD* pdwRenderFlags)
+{
+    CAutoLock lock(&m_critSec);
+
+    HRESULT hr = CheckShutdown();
+    if (FAILED(hr))
+    {
+        return hr;
+    }
+
+    if (!pdwRenderFlags)
+    {
+        return E_POINTER;
+    }
+
+    *pdwRenderFlags = m_dwRenderingPrefs;
     return S_OK;
 }
 
@@ -370,6 +542,13 @@ HRESULT CPresenter::Initialize(HWND hwndVideo, UINT gpuAdapterIndex)
         SafeDelete(m_pDisplayManager);
         return hr;
     }
+
+    hr = CreateSharpenResources();
+    if (FAILED(hr))
+    {
+        DebugLog("[DX11Presenter] Initialize: CreateSharpenResources failed hr=0x%08X\n", hr);
+        return hr;
+    }
     
     DebugLog("[DX11Presenter] Initialize: SUCCESS\n");
     return S_OK;
@@ -400,6 +579,13 @@ HRESULT CPresenter::Shutdown()
     SafeRelease(m_pVideoProcessorEnum);
     SafeRelease(m_pVideoDevice);
     SafeRelease(m_pStagingTexture);
+    SafeRelease(m_pSharpenIntermediateSRV);
+    SafeRelease(m_pSharpenIntermediateTexture);
+    m_bHasSharpenSource = FALSE;
+    SafeRelease(m_pSharpenSettingsBuffer);
+    SafeRelease(m_pLinearSampler);
+    SafeRelease(m_pSharpenPS);
+    SafeRelease(m_pFullscreenVS);
     
     // Now shutdown the display manager (releases device)
     if (m_pDisplayManager)
@@ -881,6 +1067,16 @@ HRESULT CPresenter::ProcessFrameUsingVideoProcessor(ID3D11Texture2D* pTexture, U
     pOutputView->Release();
     pInputView->Release();
     pVideoContext->Release();
+
+    if (SUCCEEDED(hr) && m_bSharpenEnabled)
+    {
+        HRESULT hrSharpen = ApplySharpenPass(true);
+        if (FAILED(hrSharpen))
+        {
+            DebugLog("[DX11Presenter] ProcessFrameUsingVideoProcessor: ApplySharpenPass failed hr=0x%08X\n", hrSharpen);
+            return hrSharpen;
+        }
+    }
     
     return hr;
 }
@@ -1025,6 +1221,42 @@ HRESULT CPresenter::SetDestinationRect(const RECT& rcDest)
     m_rcDstApp = rcDest;
     m_displayRect = rcDest;
     
+    return S_OK;
+}
+
+HRESULT CPresenter::SetUserSharpenSliderValue(float sliderValue)
+{
+    CAutoLock lock(&m_critSec);
+
+    if (sliderValue < 0.0f)
+    {
+        sliderValue = 0.0f;
+    }
+    if (sliderValue > 1.0f)
+    {
+        sliderValue = 1.0f;
+    }
+
+    m_userSliderValue = sliderValue;
+    DebugLog("[DX11Presenter] SetUserSharpenSliderValue: %.3f\n", m_userSliderValue);
+    return S_OK;
+}
+
+HRESULT CPresenter::SetUserSharpenThreshold(float thresholdValue)
+{
+    CAutoLock lock(&m_critSec);
+
+    if (thresholdValue < 0.0f)
+    {
+        thresholdValue = 0.0f;
+    }
+    if (thresholdValue > 0.02f)
+    {
+        thresholdValue = 0.02f;
+    }
+
+    m_userThreshold = thresholdValue;
+    DebugLog("[DX11Presenter] SetUserSharpenThreshold: %.4f\n", m_userThreshold);
     return S_OK;
 }
 
@@ -1350,6 +1582,295 @@ HRESULT CPresenter::ProcessSoftwareBuffer(IMFMediaBuffer* pBuffer)
     }
     
     return hr;
+}
+
+HRESULT CPresenter::CreateSharpenResources()
+{
+    if (!m_pDisplayManager)
+    {
+        return E_UNEXPECTED;
+    }
+
+    ID3D11Device* pDevice = m_pDisplayManager->GetD3D11Device();
+    if (!pDevice)
+    {
+        return E_UNEXPECTED;
+    }
+
+    if (m_pFullscreenVS && m_pSharpenPS && m_pLinearSampler && m_pSharpenSettingsBuffer)
+    {
+        return S_OK;
+    }
+
+    ID3DBlob* pVsBlob = nullptr;
+    ID3DBlob* pPsBlob = nullptr;
+    ID3DBlob* pErrBlob = nullptr;
+
+    UINT compileFlags = D3DCOMPILE_ENABLE_STRICTNESS;
+#ifdef _DEBUG
+    compileFlags |= D3DCOMPILE_DEBUG | D3DCOMPILE_SKIP_OPTIMIZATION;
+#else
+    compileFlags |= D3DCOMPILE_OPTIMIZATION_LEVEL3;
+#endif
+
+    HRESULT hr = D3DCompile(
+        g_lumaSharpenShaderSrc,
+        strlen(g_lumaSharpenShaderSrc),
+        "LumaSharpenShader",
+        nullptr,
+        nullptr,
+        "VSMain",
+        "vs_5_0",
+        compileFlags,
+        0,
+        &pVsBlob,
+        &pErrBlob);
+
+    if (FAILED(hr))
+    {
+        if (pErrBlob)
+        {
+            DebugLog("[DX11Presenter] CreateSharpenResources: VS compile error: %s\n", (const char*)pErrBlob->GetBufferPointer());
+        }
+        SafeRelease(pErrBlob);
+        SafeRelease(pVsBlob);
+        return hr;
+    }
+
+    hr = D3DCompile(
+        g_lumaSharpenShaderSrc,
+        strlen(g_lumaSharpenShaderSrc),
+        "LumaSharpenShader",
+        nullptr,
+        nullptr,
+        "PSMain",
+        "ps_5_0",
+        compileFlags,
+        0,
+        &pPsBlob,
+        &pErrBlob);
+
+    if (FAILED(hr))
+    {
+        if (pErrBlob)
+        {
+            DebugLog("[DX11Presenter] CreateSharpenResources: PS compile error: %s\n", (const char*)pErrBlob->GetBufferPointer());
+        }
+        SafeRelease(pErrBlob);
+        SafeRelease(pVsBlob);
+        SafeRelease(pPsBlob);
+        return hr;
+    }
+
+    SafeRelease(pErrBlob);
+
+    hr = pDevice->CreateVertexShader(
+        pVsBlob->GetBufferPointer(),
+        pVsBlob->GetBufferSize(),
+        nullptr,
+        &m_pFullscreenVS);
+    if (FAILED(hr))
+    {
+        SafeRelease(pVsBlob);
+        SafeRelease(pPsBlob);
+        return hr;
+    }
+
+    hr = pDevice->CreatePixelShader(
+        pPsBlob->GetBufferPointer(),
+        pPsBlob->GetBufferSize(),
+        nullptr,
+        &m_pSharpenPS);
+    SafeRelease(pVsBlob);
+    SafeRelease(pPsBlob);
+    if (FAILED(hr))
+    {
+        return hr;
+    }
+
+    D3D11_SAMPLER_DESC samplerDesc = {};
+    samplerDesc.Filter = D3D11_FILTER_MIN_MAG_MIP_LINEAR;
+    samplerDesc.AddressU = D3D11_TEXTURE_ADDRESS_CLAMP;
+    samplerDesc.AddressV = D3D11_TEXTURE_ADDRESS_CLAMP;
+    samplerDesc.AddressW = D3D11_TEXTURE_ADDRESS_CLAMP;
+    samplerDesc.MaxLOD = D3D11_FLOAT32_MAX;
+    hr = pDevice->CreateSamplerState(&samplerDesc, &m_pLinearSampler);
+    if (FAILED(hr))
+    {
+        return hr;
+    }
+
+    D3D11_BUFFER_DESC cbDesc = {};
+    cbDesc.ByteWidth = sizeof(SharpenSettingsData);
+    cbDesc.Usage = D3D11_USAGE_DEFAULT;
+    cbDesc.BindFlags = D3D11_BIND_CONSTANT_BUFFER;
+    cbDesc.CPUAccessFlags = 0;
+
+    SharpenSettingsData initialSettings = {};
+    initialSettings.fSharpenStrength = 0.0f;
+    initialSettings.fThreshold = 0.0f;
+
+    D3D11_SUBRESOURCE_DATA initData = {};
+    initData.pSysMem = &initialSettings;
+
+    hr = pDevice->CreateBuffer(&cbDesc, &initData, &m_pSharpenSettingsBuffer);
+    return hr;
+}
+
+HRESULT CPresenter::EnsureSharpenIntermediateResources(UINT width, UINT height, DXGI_FORMAT format)
+{
+    if (!m_pDisplayManager)
+    {
+        return E_UNEXPECTED;
+    }
+
+    ID3D11Device* pDevice = m_pDisplayManager->GetD3D11Device();
+    if (!pDevice)
+    {
+        return E_UNEXPECTED;
+    }
+
+    bool recreate = false;
+    if (!m_pSharpenIntermediateTexture || !m_pSharpenIntermediateSRV)
+    {
+        recreate = true;
+    }
+    else
+    {
+        D3D11_TEXTURE2D_DESC desc = {};
+        m_pSharpenIntermediateTexture->GetDesc(&desc);
+        if (desc.Width != width || desc.Height != height || desc.Format != format)
+        {
+            recreate = true;
+        }
+    }
+
+    if (!recreate)
+    {
+        return S_OK;
+    }
+
+    SafeRelease(m_pSharpenIntermediateSRV);
+    SafeRelease(m_pSharpenIntermediateTexture);
+    m_bHasSharpenSource = FALSE;
+
+    D3D11_TEXTURE2D_DESC texDesc = {};
+    texDesc.Width = width;
+    texDesc.Height = height;
+    texDesc.MipLevels = 1;
+    texDesc.ArraySize = 1;
+    texDesc.Format = format;
+    texDesc.SampleDesc.Count = 1;
+    texDesc.Usage = D3D11_USAGE_DEFAULT;
+    texDesc.BindFlags = D3D11_BIND_SHADER_RESOURCE;
+
+    HRESULT hr = pDevice->CreateTexture2D(&texDesc, nullptr, &m_pSharpenIntermediateTexture);
+    if (FAILED(hr))
+    {
+        return hr;
+    }
+
+    D3D11_SHADER_RESOURCE_VIEW_DESC srvDesc = {};
+    srvDesc.Format = format;
+    srvDesc.ViewDimension = D3D11_SRV_DIMENSION_TEXTURE2D;
+    srvDesc.Texture2D.MostDetailedMip = 0;
+    srvDesc.Texture2D.MipLevels = 1;
+
+    return pDevice->CreateShaderResourceView(m_pSharpenIntermediateTexture, &srvDesc, &m_pSharpenIntermediateSRV);
+}
+
+HRESULT CPresenter::ApplySharpenPass(bool refreshSourceFromBackBuffer)
+{
+    if (!m_pDisplayManager || !m_pFullscreenVS || !m_pSharpenPS || !m_pSharpenSettingsBuffer)
+    {
+        return E_UNEXPECTED;
+    }
+
+    ID3D11Device* pDevice = m_pDisplayManager->GetD3D11Device();
+    ID3D11DeviceContext* pContext = m_pDisplayManager->GetD3D11DeviceContext();
+    IDXGISwapChain1* pSwapChain = m_pDisplayManager->GetSwapChain();
+    if (!pDevice || !pContext || !pSwapChain)
+    {
+        return E_UNEXPECTED;
+    }
+
+    ID3D11Texture2D* pBackBuffer = nullptr;
+    HRESULT hr = pSwapChain->GetBuffer(0, __uuidof(ID3D11Texture2D), (void**)&pBackBuffer);
+    if (FAILED(hr))
+    {
+        return hr;
+    }
+
+    D3D11_TEXTURE2D_DESC bbDesc = {};
+    pBackBuffer->GetDesc(&bbDesc);
+
+    hr = EnsureSharpenIntermediateResources(bbDesc.Width, bbDesc.Height, bbDesc.Format);
+    if (FAILED(hr))
+    {
+        SafeRelease(pBackBuffer);
+        return hr;
+    }
+
+    if (refreshSourceFromBackBuffer)
+    {
+        // Capture original (pre-sharpen) frame once per decoded frame.
+        pContext->CopyResource(m_pSharpenIntermediateTexture, pBackBuffer);
+        m_bHasSharpenSource = TRUE;
+    }
+    else if (!m_bHasSharpenSource)
+    {
+        // Nothing to re-sharpen yet (e.g. repaint before first frame).
+        SafeRelease(pBackBuffer);
+        return S_OK;
+    }
+
+    ID3D11RenderTargetView* pBackBufferRTV = nullptr;
+    hr = pDevice->CreateRenderTargetView(pBackBuffer, nullptr, &pBackBufferRTV);
+    SafeRelease(pBackBuffer);
+    if (FAILED(hr))
+    {
+        return hr;
+    }
+
+    D3D11_VIEWPORT vp = {};
+    vp.TopLeftX = 0.0f;
+    vp.TopLeftY = 0.0f;
+    vp.Width = static_cast<float>(bbDesc.Width);
+    vp.Height = static_cast<float>(bbDesc.Height);
+    vp.MinDepth = 0.0f;
+    vp.MaxDepth = 1.0f;
+
+    pContext->RSSetViewports(1, &vp);
+    pContext->OMSetRenderTargets(1, &pBackBufferRTV, nullptr);
+
+    SharpenSettingsData settings = {};
+    settings.fSharpenStrength = m_userSliderValue * 20.0f;
+    settings.fThreshold = m_userThreshold;
+
+    static int s_sharpenLogCounter = 0;
+    if ((s_sharpenLogCounter++ % 120) == 0)
+    {
+        DebugLog("[DX11Presenter] ApplySharpenPass: strength=%.3f threshold=%.4f\n", settings.fSharpenStrength, settings.fThreshold);
+    }
+
+    // Runtime constant update from user slider while playback continues.
+    pContext->UpdateSubresource(m_pSharpenSettingsBuffer, 0, nullptr, &settings, 0, 0);
+
+    ID3D11ShaderResourceView* pSrv = m_pSharpenIntermediateSRV;
+    pContext->VSSetShader(m_pFullscreenVS, nullptr, 0);
+    pContext->PSSetShader(m_pSharpenPS, nullptr, 0);
+    pContext->PSSetShaderResources(0, 1, &pSrv);
+    pContext->PSSetSamplers(0, 1, &m_pLinearSampler);
+    pContext->PSSetConstantBuffers(0, 1, &m_pSharpenSettingsBuffer);
+    pContext->IASetInputLayout(nullptr);
+    pContext->IASetPrimitiveTopology(D3D11_PRIMITIVE_TOPOLOGY_TRIANGLELIST);
+    pContext->Draw(3, 0);
+
+    ID3D11ShaderResourceView* nullSrv[1] = { nullptr };
+    pContext->PSSetShaderResources(0, 1, nullSrv);
+
+    SafeRelease(pBackBufferRTV);
+    return S_OK;
 }
 
 

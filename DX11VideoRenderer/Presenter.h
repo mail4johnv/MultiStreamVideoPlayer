@@ -43,14 +43,14 @@ namespace DX11VideoRenderer
         STDMETHODIMP GetFullscreen(BOOL* pfFullscreen);
         STDMETHODIMP GetIdealVideoSize(SIZE* pszMin, SIZE* pszMax) { return E_NOTIMPL; }
         STDMETHODIMP GetNativeVideoSize(SIZE* pszVideo, SIZE* pszARVideo) { return E_NOTIMPL; }
-        STDMETHODIMP GetRenderingPrefs(DWORD* pdwRenderFlags) { return E_NOTIMPL; }
+        STDMETHODIMP GetRenderingPrefs(DWORD* pdwRenderFlags);
         STDMETHODIMP GetVideoPosition(MFVideoNormalizedRect* pnrcSource, LPRECT prcDest) { return E_NOTIMPL; }
         STDMETHODIMP GetVideoWindow(HWND* phwndVideo);
         STDMETHODIMP RepaintVideo();
         STDMETHODIMP SetAspectRatioMode(DWORD dwAspectRatioMode) { return E_NOTIMPL; }
         STDMETHODIMP SetBorderColor(COLORREF Clr) { return E_NOTIMPL; }
         STDMETHODIMP SetFullscreen(BOOL fFullscreen);
-        STDMETHODIMP SetRenderingPrefs(DWORD dwRenderingPrefs) { return E_NOTIMPL; }
+        STDMETHODIMP SetRenderingPrefs(DWORD dwRenderingPrefs);
         STDMETHODIMP SetVideoPosition(const MFVideoNormalizedRect* pnrcSource, const LPRECT prcDest) { return E_NOTIMPL; }
         STDMETHODIMP SetVideoWindow(HWND hwndVideo);
 
@@ -73,14 +73,26 @@ namespace DX11VideoRenderer
         HRESULT SetMediaType(IMFMediaType* pMediaType);
         HRESULT GetVideoSize(UINT32* pWidth, UINT32* pHeight);
         HRESULT SetDestinationRect(const RECT& rcDest);
+        HRESULT SetUserSharpenSliderValue(float sliderValue);
+        HRESULT SetUserSharpenThreshold(float thresholdValue);
 
     private:
+        struct alignas(16) SharpenSettingsData
+        {
+            float fSharpenStrength;
+            float fThreshold;
+            float _padding[2];
+        };
+
         HRESULT CheckShutdown() const;
         HRESULT CheckDeviceState(BOOL* pbDeviceChanged);
         HRESULT CreateVideoProcessor();
         HRESULT ProcessFrameUsingVideoProcessor(ID3D11Texture2D* pTexture, UINT dwViewIndex, RECT rcDest, UINT32 unInterlaceMode);
         HRESULT ProcessSoftwareBuffer(IMFMediaBuffer* pBuffer);
         HRESULT CreateStagingTexture(UINT width, UINT height, DXGI_FORMAT format);
+        HRESULT CreateSharpenResources();
+        HRESULT EnsureSharpenIntermediateResources(UINT width, UINT height, DXGI_FORMAT format);
+        HRESULT ApplySharpenPass(bool refreshSourceFromBackBuffer);
         void    SetVideoContextParameters(ID3D11VideoContext* pVideoContext, const RECT* pSrcRect, const RECT* pDstRect, UINT32 unInterlaceMode);
         void    UpdateRectangles(RECT* pDst, RECT* pSrc);
         void    LetterBoxDstRect(LPRECT lprcLBDst, const RECT& rcSrc, const RECT& rcDst);
@@ -99,9 +111,22 @@ namespace DX11VideoRenderer
         ID3D11VideoProcessor*           m_pVideoProcessor;
         ID3D11Texture2D*                m_pStagingTexture;
         DXGI_FORMAT                     m_stagingFormat;
+
+        // Post-process sharpen resources
+        ID3D11VertexShader*             m_pFullscreenVS;
+        ID3D11PixelShader*              m_pSharpenPS;
+        ID3D11SamplerState*             m_pLinearSampler;
+        ID3D11Buffer*                   m_pSharpenSettingsBuffer;
+        ID3D11Texture2D*                m_pSharpenIntermediateTexture;
+        ID3D11ShaderResourceView*       m_pSharpenIntermediateSRV;
+        BOOL                            m_bHasSharpenSource;
+        float                           m_userSliderValue;
+        float                           m_userThreshold;
+        BOOL                            m_bSharpenEnabled;
         
         // State
         BOOL                            m_bFullScreenState;
+        DWORD                           m_dwRenderingPrefs;
         BOOL                            m_bCanProcessNextSample;
         BOOL                            m_bDeviceChanged;
         

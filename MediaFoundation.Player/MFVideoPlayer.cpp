@@ -161,6 +161,8 @@ VideoPlayer::VideoPlayer() :
     m_hwndEvent(nullptr),
     m_nrcEventCookie(0),
     m_gpuAdapterIndex(0),
+    m_sharpenStrength(0.0),
+    m_sharpenThreshold(0.0),
     m_pCritSec(new CRITICAL_SECTION()),
     m_initialized(false)
 {
@@ -364,6 +366,37 @@ void VideoPlayer::IsMuted::set(bool value) {
     if (SUCCEEDED(hr)) {
         pVolume->SetMute(value ? TRUE : FALSE);
         pVolume->Release();
+    }
+}
+
+void VideoPlayer::SharpenStrength::set(double value)
+{
+    double clamped = Math::Clamp(value, 0.0, 1.0);
+    m_sharpenStrength = clamped;
+
+    if (m_pVideoDisplay != nullptr)
+    {
+        // Encode strength (low 16) and threshold (high 16) as milli-units.
+        DWORD sharpenMilli = static_cast<DWORD>(clamped * 1000.0 + 0.5);
+        DWORD thresholdMilli = static_cast<DWORD>(Math::Clamp(m_sharpenThreshold / 0.02, 0.0, 1.0) * 1000.0 + 0.5);
+        DWORD renderPrefs = (sharpenMilli & 0xFFFFu) | ((thresholdMilli & 0xFFFFu) << 16);
+        System::Console::WriteLine(String::Format("[MFVideoPlayer] SharpenStrength set={0:F3} prefs=0x{1:X8}", clamped, renderPrefs));
+        m_pVideoDisplay->SetRenderingPrefs(renderPrefs);
+    }
+}
+
+void VideoPlayer::SharpenThreshold::set(double value)
+{
+    double clamped = Math::Clamp(value, 0.0, 0.02);
+    m_sharpenThreshold = clamped;
+
+    if (m_pVideoDisplay != nullptr)
+    {
+        DWORD sharpenMilli = static_cast<DWORD>(Math::Clamp(m_sharpenStrength, 0.0, 1.0) * 1000.0 + 0.5);
+        DWORD thresholdMilli = static_cast<DWORD>(Math::Clamp(clamped / 0.02, 0.0, 1.0) * 1000.0 + 0.5);
+        DWORD renderPrefs = (sharpenMilli & 0xFFFFu) | ((thresholdMilli & 0xFFFFu) << 16);
+        System::Console::WriteLine(String::Format("[MFVideoPlayer] SharpenThreshold set={0:F4} prefs=0x{1:X8}", clamped, renderPrefs));
+        m_pVideoDisplay->SetRenderingPrefs(renderPrefs);
     }
 }
 
@@ -1017,6 +1050,13 @@ HRESULT VideoPlayer::HandleEvent(IMFMediaEvent* pEvent) {
                             DWORD renderPrefs = 0x2; // MFVideoRenderPrefs_DoNotClipToDevice
                             HRESULT hrPrefs = m_pVideoDisplay->SetRenderingPrefs(renderPrefs);
                             System::Console::WriteLine(String::Format("[MFVideoPlayer] SetRenderingPrefs(0x{0:X}) result: 0x{1:X}", renderPrefs, hrPrefs));
+
+                            // Re-apply user sharpen settings after topology/render service becomes ready.
+                            DWORD sharpenMilli = static_cast<DWORD>(Math::Clamp(m_sharpenStrength, 0.0, 1.0) * 1000.0 + 0.5);
+                            DWORD thresholdMilli = static_cast<DWORD>(Math::Clamp(m_sharpenThreshold / 0.02, 0.0, 1.0) * 1000.0 + 0.5);
+                            DWORD sharpenPrefs = (sharpenMilli & 0xFFFFu) | ((thresholdMilli & 0xFFFFu) << 16);
+                            HRESULT hrSharpen = m_pVideoDisplay->SetRenderingPrefs(sharpenPrefs);
+                            System::Console::WriteLine(String::Format("[MFVideoPlayer] SetRenderingPrefs(sharpen=0x{0:X}) result: 0x{1:X}", sharpenPrefs, hrSharpen));
                             
                             // Update video position
                             if (m_hwndVideo) {

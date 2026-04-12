@@ -1178,6 +1178,38 @@ STDMETHODIMP CMediaSink::SetRenderingPrefs(DWORD dwRenderFlags)
     }
 
     m_dwRenderingPrefs = dwRenderFlags;
+
+    // Custom extension for this renderer:
+    // low 16 bits: sharpen strength milli-units in [0..1000] => [0..1]
+    // high 16 bits: threshold milli-units in [0..1000] => [0..0.02]
+    float slider = static_cast<float>(dwRenderFlags & 0xFFFFu) / 1000.0f;
+    float thresholdNorm = static_cast<float>((dwRenderFlags >> 16) & 0xFFFFu) / 1000.0f;
+    if (slider < 0.0f)
+    {
+        slider = 0.0f;
+    }
+    if (slider > 1.0f)
+    {
+        slider = 1.0f;
+    }
+
+    if (thresholdNorm < 0.0f)
+    {
+        thresholdNorm = 0.0f;
+    }
+    if (thresholdNorm > 1.0f)
+    {
+        thresholdNorm = 1.0f;
+    }
+    float threshold = thresholdNorm * 0.02f;
+    DebugLog("[DX11MediaSink] SetRenderingPrefs: raw=0x%08X strength=%.3f threshold=%.4f\n", dwRenderFlags, slider, threshold);
+
+    if (m_spPresenter)
+    {
+        m_spPresenter->SetUserSharpenSliderValue(slider);
+        m_spPresenter->SetUserSharpenThreshold(threshold);
+    }
+
     return S_OK;
 }
 

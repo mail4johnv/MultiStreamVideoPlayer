@@ -80,6 +80,8 @@ namespace MediaFoundation {
             HWND m_hwndEvent;
             DWORD m_nrcEventCookie;
             unsigned int m_gpuAdapterIndex;  // GPU adapter to use for rendering
+            double m_sharpenStrength;
+            double m_sharpenThreshold;
             
             CRITICAL_SECTION* m_pCritSec;
             bool m_initialized;
@@ -136,6 +138,16 @@ namespace MediaFoundation {
             property bool IsMuted {
                 bool get();
                 void set(bool value);
+            }
+
+            property double SharpenStrength {
+                double get() { return m_sharpenStrength; }
+                void set(double value);
+            }
+
+            property double SharpenThreshold {
+                double get() { return m_sharpenThreshold; }
+                void set(double value);
             }
 
             // Methods

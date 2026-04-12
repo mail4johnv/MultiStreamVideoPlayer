@@ -50,6 +50,12 @@ public partial class MainViewModel : ObservableObject
     private bool _isMuted;
 
     [ObservableProperty]
+    private double _sharpenStrength = 0.6;
+
+    [ObservableProperty]
+    private double _sharpenThreshold = 0.0;
+
+    [ObservableProperty]
     private DateTime? _timelineStartTime;
 
     [ObservableProperty]
@@ -69,6 +75,11 @@ public partial class MainViewModel : ObservableObject
 
     [ObservableProperty]
     private int _gridRows = 1;
+
+    public double SharpenStrengthMin => 0.0;
+    public double SharpenStrengthMax => 1.0;
+    public double SharpenThresholdMin => 0.0;
+    public double SharpenThresholdMax => 0.02;
 
     public MainViewModel()
     {
@@ -281,6 +292,8 @@ public partial class MainViewModel : ObservableObject
             if (!_nativePlayers.Contains(nativePlayer))
             {
                 _nativePlayers.Add(nativePlayer);
+                nativePlayer.SharpenStrength = SharpenStrength;
+                nativePlayer.SharpenThreshold = SharpenThreshold;
                 //Console.WriteLine($"[MainViewModel] Added NativeMediaPlayer - Source={nativePlayer.Source}, total count: {_nativePlayers.Count}");
                 nativePlayer.MediaOpened += (s, e) =>
                 {
@@ -839,6 +852,36 @@ public partial class MainViewModel : ObservableObject
     {
         ManagedLogger.LogInfo($"[MainViewModel.OnIsMutedChanged] Mute changed to: {value}, Current Volume: {Volume}");
         UpdateAllVolumes();
+    }
+
+    partial void OnSharpenStrengthChanged(double value)
+    {
+        var clamped = Math.Clamp(value, SharpenStrengthMin, SharpenStrengthMax);
+        if (Math.Abs(clamped - value) > double.Epsilon)
+        {
+            SharpenStrength = clamped;
+            return;
+        }
+
+        foreach (var nativePlayer in _nativePlayers)
+        {
+            nativePlayer.SharpenStrength = clamped;
+        }
+    }
+
+    partial void OnSharpenThresholdChanged(double value)
+    {
+        var clamped = Math.Clamp(value, SharpenThresholdMin, SharpenThresholdMax);
+        if (Math.Abs(clamped - value) > double.Epsilon)
+        {
+            SharpenThreshold = clamped;
+            return;
+        }
+
+        foreach (var nativePlayer in _nativePlayers)
+        {
+            nativePlayer.SharpenThreshold = clamped;
+        }
     }
 
     /// <summary>

@@ -134,6 +134,8 @@
                                 <!-- Video Area -->
                                 <Grid Grid.Row="1" Background="{StaticResource BackgroundBrush}">
                                     <controls:NativeMediaPlayer Source="{Binding FilePath}"
+                                                                SharpenStrength="{Binding DataContext.SharpenStrength, RelativeSource={RelativeSource AncestorType=Window}}"
+                                                                SharpenThreshold="{Binding DataContext.SharpenThreshold, RelativeSource={RelativeSource AncestorType=Window}}"
                                                                 Tag="{Binding}"
                                                                 Loaded="MediaElement_Loaded"
                                                                 Unloaded="MediaElement_Unloaded" />
@@ -226,6 +228,48 @@
                                     Value="{Binding Volume, UpdateSourceTrigger=PropertyChanged}"
                                     VerticalAlignment="Center"
                                     Style="{StaticResource ModernSlider}" />
+
+                                <TextBlock Text="Sharpen"
+                                       Margin="14,0,6,0"
+                                       VerticalAlignment="Center"
+                                       Foreground="{StaticResource TextBrush}"
+                                       FontSize="12" />
+                                <Slider Width="110"
+                                    Minimum="{Binding SharpenStrengthMin}"
+                                    Maximum="{Binding SharpenStrengthMax}"
+                                    SmallChange="0.01"
+                                    TickFrequency="0.1"
+                                    IsSnapToTickEnabled="False"
+                                    Value="{Binding SharpenStrength, UpdateSourceTrigger=PropertyChanged}"
+                                    VerticalAlignment="Center"
+                                    Style="{StaticResource ModernSlider}" />
+                                    <TextBlock Text="{Binding SharpenStrength, StringFormat=F2}"
+                                           Margin="6,0,0,0"
+                                           VerticalAlignment="Center"
+                                           Foreground="{StaticResource TextBrush}"
+                                           FontSize="12"
+                                           Width="34" />
+
+                                <TextBlock Text="Threshold"
+                                       Margin="10,0,6,0"
+                                       VerticalAlignment="Center"
+                                       Foreground="{StaticResource TextBrush}"
+                                       FontSize="12" />
+                                <Slider Width="110"
+                                    Minimum="{Binding SharpenThresholdMin}"
+                                    Maximum="{Binding SharpenThresholdMax}"
+                                    SmallChange="0.001"
+                                    TickFrequency="0.01"
+                                    IsSnapToTickEnabled="False"
+                                    Value="{Binding SharpenThreshold, UpdateSourceTrigger=PropertyChanged}"
+                                    VerticalAlignment="Center"
+                                    Style="{StaticResource ModernSlider}" />
+                                    <TextBlock Text="{Binding SharpenThreshold, StringFormat=F3}"
+                                           Margin="6,0,0,0"
+                                           VerticalAlignment="Center"
+                                           Foreground="{StaticResource TextBrush}"
+                                           FontSize="12"
+                                           Width="38" />
                         </StackPanel>
 
                         <!-- Right Side: Playback Controls -->

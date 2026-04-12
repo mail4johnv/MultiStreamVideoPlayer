@@ -48,6 +48,14 @@ public class NativeMediaPlayer : HwndHost
         DependencyProperty.Register(nameof(IsMuted), typeof(bool), typeof(NativeMediaPlayer),
             new PropertyMetadata(false, OnMutedChanged));
 
+    public static readonly DependencyProperty SharpenStrengthProperty =
+        DependencyProperty.Register(nameof(SharpenStrength), typeof(double), typeof(NativeMediaPlayer),
+            new PropertyMetadata(0.0, OnSharpenStrengthChanged));
+
+    public static readonly DependencyProperty SharpenThresholdProperty =
+        DependencyProperty.Register(nameof(SharpenThreshold), typeof(double), typeof(NativeMediaPlayer),
+            new PropertyMetadata(0.0, OnSharpenThresholdChanged));
+
     //public static readonly DependencyProperty TagProperty =
     //    DependencyProperty.Register(nameof(Tag), typeof(object), typeof(NativeMediaPlayer),
     //        new PropertyMetadata(null));
@@ -68,6 +76,18 @@ public class NativeMediaPlayer : HwndHost
     {
         get => (bool)GetValue(IsMutedProperty);
         set => SetValue(IsMutedProperty, value);
+    }
+
+    public double SharpenStrength
+    {
+        get => (double)GetValue(SharpenStrengthProperty);
+        set => SetValue(SharpenStrengthProperty, value);
+    }
+
+    public double SharpenThreshold
+    {
+        get => (double)GetValue(SharpenThresholdProperty);
+        set => SetValue(SharpenThresholdProperty, value);
     }
 
     //public object? Tag
@@ -104,6 +124,8 @@ public class NativeMediaPlayer : HwndHost
         
         // Set GPU adapter from App settings
         _player.SetGPUAdapter((uint)App.SelectedGPUAdapter);
+        _player.SharpenStrength = SharpenStrength;
+        _player.SharpenThreshold = SharpenThreshold;
         
         //Console.WriteLine($"[NativeMediaPlayer] VideoPlayer created - State={_player.State}");
         _player.MediaOpened += (s, e) =>
@@ -435,6 +457,44 @@ public class NativeMediaPlayer : HwndHost
             else
             {
                 ManagedLogger.LogWarning($"[NativeMediaPlayer.OnMutedChanged] _player is null, cannot set mute");
+            }
+        }
+    }
+
+    private static void OnSharpenStrengthChanged(DependencyObject d, DependencyPropertyChangedEventArgs e)
+    {
+        if (d is NativeMediaPlayer player && e.NewValue is double sharpenStrength)
+        {
+            if (player._player != null)
+            {
+                try
+                {
+                    player._player.SharpenStrength = sharpenStrength;
+                    player.Repaint();
+                }
+                catch (Exception ex)
+                {
+                    ManagedLogger.LogError($"[NativeMediaPlayer] Error setting sharpen strength: {ex.Message}");
+                }
+            }
+        }
+    }
+
+    private static void OnSharpenThresholdChanged(DependencyObject d, DependencyPropertyChangedEventArgs e)
+    {
+        if (d is NativeMediaPlayer player && e.NewValue is double sharpenThreshold)
+        {
+            if (player._player != null)
+            {
+                try
+                {
+                    player._player.SharpenThreshold = sharpenThreshold;
+                    player.Repaint();
+                }
+                catch (Exception ex)
+                {
+                    ManagedLogger.LogError($"[NativeMediaPlayer] Error setting sharpen threshold: {ex.Message}");
+                }
             }
         }
     }
