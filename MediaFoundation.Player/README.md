@@ -10,6 +10,13 @@ This project wraps the complex Media Foundation COM interfaces in a managed C++/
 
 ## Features
 
+### Video Post-Processing
+- **Sharpening** - Luma-only Laplacian sharpening via DX11 shader; `SharpenStrength` and `SharpenThreshold` properties
+- **Color Controls** - Brightness, Contrast, Hue, Saturation properties; applied via `IDX11VideoColorControl` on the DX11 renderer (both playing and paused states)
+
+> **Note on MF Color Control DSP:** The `CLSID_CColorControlDmo` DSP was evaluated but rejected. Topology insertion fails at runtime (`E_NOTIMPL`) with hardware/DX11 pipelines. Color controls are implemented entirely in the DX11 renderer layer.
+
+
 ### Media Foundation Integration
 - Direct access to `IMFMediaSession` for playback control
 - Topology building for audio/video routing
@@ -31,15 +38,15 @@ This project wraps the complex Media Foundation COM interfaces in a managed C++/
 - **Fallback** - Automatic fallback to default GPU
 
 ### Video Output
-- **EVR (Default)** - Enhanced Video Renderer
+- **DX11 (Active)** - DirectX 11 custom renderer
+  - Post-process sharpening shader
+  - Runtime color controls (Brightness/Contrast/Hue/Saturation)
+  - Extensible for future effects
+
+- **EVR (Fallback)** - Enhanced Video Renderer
   - Built-in Windows component
   - Hardware accelerated
-  - Proven stability
-  
-- **DX11 (Optional)** - DirectX 11 custom renderer
-  - Advanced customization
-  - Shader support ready
-  - Custom effects capability
+  - Proven stability (used when `USE_DX11_RENDERER = false`)
 
 ### Logging
 - **Thread-safe logging** - Safe for multi-threaded Media Foundation
@@ -130,6 +137,16 @@ PlayerState State { get; }            // Current playback state
 IntPtr VideoWindow { get; set; }      // HWND for rendering
 bool HasVideo { get; }                // Check if video stream present
 bool HasAudio { get; }                // Check if audio stream present
+
+// Sharpening (DX11 renderer only)
+double SharpenStrength { get; set; }  // 0.0 – 1.0
+double SharpenThreshold { get; set; } // 0.0 – 0.02 recommended
+
+// Color controls (DX11 renderer only, -127 to +127)
+int Brightness { get; set; }
+int Contrast   { get; set; }
+int Hue        { get; set; }
+int Saturation { get; set; }
 ```
 
 #### GPU Management
@@ -251,14 +268,16 @@ for (UINT i = 0; pFactory->EnumAdapters(i, &pAdapter) == S_OK; ++i)
 
 ### DX11 Renderer Integration
 
-To enable optional DX11 renderer:
+The DX11 renderer is **enabled by default** (`USE_DX11_RENDERER = true`). Sharpening and color controls only work through the DX11 renderer path.
+
+To revert to EVR:
 
 ```cpp
 // In MFVideoPlayer.cpp, change:
-#define USE_DX11_RENDERER false    // Change to true
-
-// Then rebuild
+#define USE_DX11_RENDERER true    // Change to false
 ```
+
+> Color control and sharpening properties are silently ignored when EVR is active.
 
 ## Threading Model
 

@@ -2,7 +2,7 @@
 
 A static library implementing a custom Media Foundation video renderer using DirectX 11, providing advanced rendering capabilities as an alternative to the built-in Enhanced Video Renderer (EVR).
 
-**Status:** ✅ Built, tested, and integrated | 🔴 Currently optional (can be enabled by setting `USE_DX11_RENDERER = true`)
+**Status:** ✅ Built, tested, and integrated | ✅ Active renderer (`USE_DX11_RENDERER = true`)
 
 ## Overview
 
@@ -10,7 +10,8 @@ This static library provides a complete `IMFMediaSink` implementation that rende
 
 - Custom rendering pipelines
 - GPU adapter selection
-- Future shader effects
+- Real-time video sharpening via HLSL post-process shader
+- Runtime color controls (Brightness, Contrast, Hue, Saturation)
 - Hardware-accelerated color space conversion
 - Extensible rendering architecture
 
@@ -35,13 +36,13 @@ Media Foundation (Session) → DX11VideoRenderer (MediaSink)
 | File | Type | Purpose |
 |------|------|---------|
 | `Activate.cpp/h` | Source | `IMFActivate` factory - Creates media sink with GPU selection |
-| `MediaSink.cpp/h` | Source | `IMFMediaSink` implementation - Main sink interface |
+| `MediaSink.cpp/h` | Source | `IMFMediaSink` + `IDX11VideoColorControl` - Main sink interface |
 | `StreamSink.cpp/h` | Source | `IMFStreamSink` implementation - Receives video samples |
-| `Presenter.cpp/h` | Source | Video frame presentation - Handles rendering |
+| `Presenter.cpp/h` | Source | Video frame presentation - Handles rendering, sharpening, and color controls |
 | `Scheduler.cpp/h` | Source | Frame scheduling - Timing and sync |
 | `Display.cpp/h` | Source | D3D11/DXGI management - Device and swap chain |
 | `Logger.cpp/h` | Source | Thread-safe buffered logging |
-| `Common.h` | Header | Synchronization primitives and utilities |
+| `Common.h` | Header | Synchronization primitives, utilities, and `IDX11VideoColorControl` interface |
 | `DX11VideoRenderer.vcxproj` | Project | Visual Studio project file |
 
 ## Build Configuration
@@ -114,7 +115,7 @@ STDMETHODIMP SetCurrentMediaType(IMFMediaType* pMediaType);
 
 ### CPresenter Class
 
-**Purpose:** Handles video frame rendering.
+**Purpose:** Handles video frame rendering, post-process sharpening, and color controls.
 
 ```cpp
 // Initialization
@@ -123,6 +124,11 @@ HRESULT Initialize(HWND hwndVideo, UINT gpuAdapterIndex = 0);
 // Frame processing
 HRESULT ProcessFrame(IMFSample* pSample);
 HRESULT PresentFrame();
+
+// Post-processing controls (runtime, no topology change needed)
+HRESULT SetUserSharpenSliderValue(float sliderValue);   // 0.0 – 1.0
+HRESULT SetUserSharpenThreshold(float thresholdValue);  // 0.0 – 0.02 recommended
+HRESULT SetColorControls(int brightness, int contrast, int hue, int saturation); // -127 to +127
 ```
 
 ### CScheduler Class
@@ -147,6 +153,53 @@ HRESULT Initialize(HWND hwndVideo);
 HRESULT CreateSwapChain(UINT width, UINT height);
 HRESULT Present();
 ```
+
+## Post-Processing Pipeline
+
+The renderer applies effects in two stages after the D3D11 video processor:
+
+### Stage 1 — Video Processor Filters (playing frames)
+`ApplyVideoProcessorColorControls()` maps each color slider value to the corresponding D3D11 video-processor filter (`VideoProcessorSetStreamFilter`):
+- `D3D11_VIDEO_PROCESSOR_FILTER_BRIGHTNESS`
+- `D3D11_VIDEO_PROCESSOR_FILTER_CONTRAST`
+- `D3D11_VIDEO_PROCESSOR_FILTER_HUE`
+- `D3D11_VIDEO_PROCESSOR_FILTER_SATURATION`
+
+### Stage 2 — HLSL Sharpen/Color Pass (every repaint, including paused)
+An intermediate render target is blitted through `PSMain` (embedded HLSL shader). The shader:
+1. Converts RGB → YCbCr
+2. Applies Laplacian edge-aware sharpening on **Y (luma) only**
+3. Applies hue rotation and saturation scaling on **Cb/Cr**
+4. Applies brightness offset and contrast scaling on **Y**
+5. Converts back to RGB
+
+Constant buffer `SharpenSettings (b0)`:
+```hlsl
+float fSharpenStrength;  // 0.0 – 20.0 (slider × 20)
+float fThreshold;        // edge threshold (0.0 – ~0.02)
+float fBrightness;       // -0.5 – +0.5
+float fContrast;         // 0.0 – 2.0 (1.0 = neutral)
+float fHueRadians;       // -π – +π
+float fSaturation;       // 0.0 – 2.0 (1.0 = neutral)
+```
+
+This Stage 2 pass is the **only** color path active for paused frames, ensuring slider changes are always visible.
+
+### `IDX11VideoColorControl` Interface
+
+Declared in `Common.h`, implemented by both `CPresenter` and `CMediaSink` (which forwards to presenter):
+
+```cpp
+MIDL_INTERFACE("3F415F8C-4F66-4F46-9F91-6B7B7CF4E5A1")
+IDX11VideoColorControl : public IUnknown
+{
+    virtual HRESULT STDMETHODCALLTYPE SetColorControls(
+        int brightness, int contrast, int hue, int saturation) = 0;
+};
+```
+
+The `MediaFoundation.Player` layer retrieves this via `QueryInterface` on the `IMFVideoDisplayControl` pointer and invokes it directly.
+
 
 ## Supported Video Formats
 
@@ -284,7 +337,8 @@ Then rebuild `MediaFoundation.Player.dll`.
 ## Future Enhancements
 
 - [ ] Multi-stream sink support
-- [ ] Custom shader effects
+- [x] Custom shader effects (sharpening)
+- [x] Runtime color controls (Brightness/Contrast/Hue/Saturation)
 - [ ] Color space conversion (10-bit, HDR)
 - [ ] Interlaced video support
 - [ ] Video effect composition

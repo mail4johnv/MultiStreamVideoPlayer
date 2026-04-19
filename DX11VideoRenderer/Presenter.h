@@ -22,6 +22,7 @@ namespace DX11VideoRenderer
     class CPresenter :
         public IMFVideoDisplayControl,
         public IMFGetService,
+        public IDX11VideoColorControl,
         private CBase
     {
     public:
@@ -75,12 +76,17 @@ namespace DX11VideoRenderer
         HRESULT SetDestinationRect(const RECT& rcDest);
         HRESULT SetUserSharpenSliderValue(float sliderValue);
         HRESULT SetUserSharpenThreshold(float thresholdValue);
+        STDMETHODIMP SetColorControls(int brightness, int contrast, int hue, int saturation) override;
 
     private:
         struct alignas(16) SharpenSettingsData
         {
             float fSharpenStrength;
             float fThreshold;
+            float fBrightness;
+            float fContrast;
+            float fHueRadians;
+            float fSaturation;
             float _padding[2];
         };
 
@@ -93,6 +99,7 @@ namespace DX11VideoRenderer
         HRESULT CreateSharpenResources();
         HRESULT EnsureSharpenIntermediateResources(UINT width, UINT height, DXGI_FORMAT format);
         HRESULT ApplySharpenPass(bool refreshSourceFromBackBuffer);
+        void    ApplyVideoProcessorColorControls(ID3D11VideoContext* pVideoContext);
         void    SetVideoContextParameters(ID3D11VideoContext* pVideoContext, const RECT* pSrcRect, const RECT* pDstRect, UINT32 unInterlaceMode);
         void    UpdateRectangles(RECT* pDst, RECT* pSrc);
         void    LetterBoxDstRect(LPRECT lprcLBDst, const RECT& rcSrc, const RECT& rcDst);
@@ -123,6 +130,10 @@ namespace DX11VideoRenderer
         float                           m_userSliderValue;
         float                           m_userThreshold;
         BOOL                            m_bSharpenEnabled;
+        int                             m_colorBrightness;
+        int                             m_colorContrast;
+        int                             m_colorHue;
+        int                             m_colorSaturation;
         
         // State
         BOOL                            m_bFullScreenState;

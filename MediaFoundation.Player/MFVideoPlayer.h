@@ -82,6 +82,10 @@ namespace MediaFoundation {
             unsigned int m_gpuAdapterIndex;  // GPU adapter to use for rendering
             double m_sharpenStrength;
             double m_sharpenThreshold;
+            int m_colorBrightness;
+            int m_colorContrast;
+            int m_colorHue;
+            int m_colorSaturation;
             
             CRITICAL_SECTION* m_pCritSec;
             bool m_initialized;
@@ -148,6 +152,26 @@ namespace MediaFoundation {
             property double SharpenThreshold {
                 double get() { return m_sharpenThreshold; }
                 void set(double value);
+            }
+
+            property int Brightness {
+                int get() { return m_colorBrightness; }
+                void set(int value);
+            }
+
+            property int Contrast {
+                int get() { return m_colorContrast; }
+                void set(int value);
+            }
+
+            property int Hue {
+                int get() { return m_colorHue; }
+                void set(int value);
+            }
+
+            property int Saturation {
+                int get() { return m_colorSaturation; }
+                void set(int value);
             }
 
             // Methods

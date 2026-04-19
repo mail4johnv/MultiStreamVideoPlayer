@@ -13,6 +13,7 @@
 // limitations under the License.
 
 #include "MFVideoPlayer.h"
+#include "ManagedLogger.h"
 #include <shlwapi.h>
 #include <assert.h>
 #include <mfreadwrite.h>
@@ -42,7 +43,9 @@ InitializeConsole consoleInitialize;
 #define USE_MS_DX11_RENDERER_DLL false
 #if USE_DX11_RENDERER
 #include "..\DX11VideoRenderer\Activate.h"
+#include "..\DX11VideoRenderer\Common.h"
 #pragma comment(lib, "DX11VideoRenderer.lib")
+#pragma comment(lib, "wmcodecdspuuid.lib")
 #elif USE_MS_DX11_RENDERER_DLL
 #include "..\DX11VideoRenderer_in\Activate.h"
 #endif
@@ -76,7 +79,7 @@ static HRESULT LoadMSDx11RendererDll()
     {
         InitializeLogging("debug.log");
         loggerInitialized = true;
-        System::Console::WriteLine("[MFVideoPlayer] Logger initialized to debug.log");
+        ManagedLogger::Log("[MFVideoPlayer] Logger initialized to debug.log");
     }
 
     if (g_hMSDx11RendererDll != nullptr)
@@ -89,11 +92,11 @@ static HRESULT LoadMSDx11RendererDll()
     if (g_hMSDx11RendererDll == nullptr)
     {
         DWORD err = GetLastError();
-        System::Console::WriteLine(String::Format("[MFVideoPlayer] Failed to load MSDx11VideoRenderer.dll, error=0x{0:X}", err));
+        ManagedLogger::Log(String::Format("[MFVideoPlayer] Failed to load MSDx11VideoRenderer.dll, error=0x{0:X}", err));
         return HRESULT_FROM_WIN32(err);
     }
 
-    System::Console::WriteLine("[MFVideoPlayer] Loaded MSDx11VideoRenderer.dll successfully");
+    ManagedLogger::Log("[MFVideoPlayer] Loaded MSDx11VideoRenderer.dll successfully");
 
     // Get the CreateDX11VideoRendererActivate function
     g_pfnCreateMSActivate = (PFN_CreateDX11VideoRendererActivate)GetProcAddress(
@@ -102,13 +105,13 @@ static HRESULT LoadMSDx11RendererDll()
     if (g_pfnCreateMSActivate == nullptr)
     {
         DWORD err = GetLastError();
-        System::Console::WriteLine(String::Format("[MFVideoPlayer] Failed to get CreateDX11VideoRendererActivate, error=0x{0:X}", err));
+        ManagedLogger::Log(String::Format("[MFVideoPlayer] Failed to get CreateDX11VideoRendererActivate, error=0x{0:X}", err));
         FreeLibrary(g_hMSDx11RendererDll);
         g_hMSDx11RendererDll = nullptr;
         return HRESULT_FROM_WIN32(err);
     }
 
-    System::Console::WriteLine("[MFVideoPlayer] Got CreateDX11VideoRendererActivate function pointer");
+    ManagedLogger::Log("[MFVideoPlayer] Got CreateDX11VideoRendererActivate function pointer");
     return S_OK;
 }
 
@@ -123,7 +126,7 @@ static HRESULT CreateMSDX11VideoRendererActivate(HWND hwnd, IMFActivate** ppActi
 
     // Call the function directly
     hr = g_pfnCreateMSActivate(hwnd, ppActivate);
-    System::Console::WriteLine(String::Format("[MFVideoPlayer] CreateDX11VideoRendererActivate (MS DLL) result: 0x{0:X}", hr));
+    ManagedLogger::Log(String::Format("[MFVideoPlayer] CreateDX11VideoRendererActivate (MS DLL) result: 0x{0:X}", hr));
     return hr;
 }
 
@@ -135,7 +138,7 @@ static void UnloadMSDx11RendererDll()
         FreeLibrary(g_hMSDx11RendererDll);
         g_hMSDx11RendererDll = nullptr;
         g_pfnCreateMSActivate = nullptr;
-        System::Console::WriteLine("[MFVideoPlayer] Unloaded MSDx11VideoRenderer.dll");
+        ManagedLogger::Log("[MFVideoPlayer] Unloaded MSDx11VideoRenderer.dll");
     }
 }
 
@@ -163,6 +166,10 @@ VideoPlayer::VideoPlayer() :
     m_gpuAdapterIndex(0),
     m_sharpenStrength(0.0),
     m_sharpenThreshold(0.0),
+    m_colorBrightness(0),
+    m_colorContrast(0),
+    m_colorHue(0),
+    m_colorSaturation(0),
     m_pCritSec(new CRITICAL_SECTION()),
     m_initialized(false)
 {
@@ -380,7 +387,7 @@ void VideoPlayer::SharpenStrength::set(double value)
         DWORD sharpenMilli = static_cast<DWORD>(clamped * 1000.0 + 0.5);
         DWORD thresholdMilli = static_cast<DWORD>(Math::Clamp(m_sharpenThreshold / 0.02, 0.0, 1.0) * 1000.0 + 0.5);
         DWORD renderPrefs = (sharpenMilli & 0xFFFFu) | ((thresholdMilli & 0xFFFFu) << 16);
-        System::Console::WriteLine(String::Format("[MFVideoPlayer] SharpenStrength set={0:F3} prefs=0x{1:X8}", clamped, renderPrefs));
+        ManagedLogger::Log(String::Format("[MFVideoPlayer] SharpenStrength set={0:F3} prefs=0x{1:X8}", clamped, renderPrefs));
         m_pVideoDisplay->SetRenderingPrefs(renderPrefs);
     }
 }
@@ -395,9 +402,81 @@ void VideoPlayer::SharpenThreshold::set(double value)
         DWORD sharpenMilli = static_cast<DWORD>(Math::Clamp(m_sharpenStrength, 0.0, 1.0) * 1000.0 + 0.5);
         DWORD thresholdMilli = static_cast<DWORD>(Math::Clamp(clamped / 0.02, 0.0, 1.0) * 1000.0 + 0.5);
         DWORD renderPrefs = (sharpenMilli & 0xFFFFu) | ((thresholdMilli & 0xFFFFu) << 16);
-        System::Console::WriteLine(String::Format("[MFVideoPlayer] SharpenThreshold set={0:F4} prefs=0x{1:X8}", clamped, renderPrefs));
+        ManagedLogger::Log(String::Format("[MFVideoPlayer] SharpenThreshold set={0:F4} prefs=0x{1:X8}", clamped, renderPrefs));
         m_pVideoDisplay->SetRenderingPrefs(renderPrefs);
     }
+}
+
+void VideoPlayer::Brightness::set(int value)
+{
+    m_colorBrightness = Math::Clamp(value, -127, 127);
+    ManagedLogger::Log(String::Format("[MFVideoPlayer] Brightness set to {0}", m_colorBrightness));
+
+    if (m_pVideoDisplay != nullptr)
+    {
+        DX11VideoRenderer::IDX11VideoColorControl* pColorControl = nullptr;
+        HRESULT hrColor = m_pVideoDisplay->QueryInterface(__uuidof(DX11VideoRenderer::IDX11VideoColorControl), (void**)&pColorControl);
+        if (SUCCEEDED(hrColor) && pColorControl)
+        {
+            pColorControl->SetColorControls(m_colorBrightness, m_colorContrast, m_colorHue, m_colorSaturation);
+            pColorControl->Release();
+        }
+    }
+
+}
+
+void VideoPlayer::Contrast::set(int value)
+{
+    m_colorContrast = Math::Clamp(value, -127, 127);
+    ManagedLogger::Log(String::Format("[MFVideoPlayer] Contrast set to {0}", m_colorContrast));
+
+    if (m_pVideoDisplay != nullptr)
+    {
+        DX11VideoRenderer::IDX11VideoColorControl* pColorControl = nullptr;
+        HRESULT hrColor = m_pVideoDisplay->QueryInterface(__uuidof(DX11VideoRenderer::IDX11VideoColorControl), (void**)&pColorControl);
+        if (SUCCEEDED(hrColor) && pColorControl)
+        {
+            pColorControl->SetColorControls(m_colorBrightness, m_colorContrast, m_colorHue, m_colorSaturation);
+            pColorControl->Release();
+        }
+    }
+
+}
+
+void VideoPlayer::Hue::set(int value)
+{
+    m_colorHue = Math::Clamp(value, -127, 127);
+    ManagedLogger::Log(String::Format("[MFVideoPlayer] Hue set to {0}", m_colorHue));
+
+    if (m_pVideoDisplay != nullptr)
+    {
+        DX11VideoRenderer::IDX11VideoColorControl* pColorControl = nullptr;
+        HRESULT hrColor = m_pVideoDisplay->QueryInterface(__uuidof(DX11VideoRenderer::IDX11VideoColorControl), (void**)&pColorControl);
+        if (SUCCEEDED(hrColor) && pColorControl)
+        {
+            pColorControl->SetColorControls(m_colorBrightness, m_colorContrast, m_colorHue, m_colorSaturation);
+            pColorControl->Release();
+        }
+    }
+
+}
+
+void VideoPlayer::Saturation::set(int value)
+{
+    m_colorSaturation = Math::Clamp(value, -127, 127);
+    ManagedLogger::Log(String::Format("[MFVideoPlayer] Saturation set to {0}", m_colorSaturation));
+
+    if (m_pVideoDisplay != nullptr)
+    {
+        DX11VideoRenderer::IDX11VideoColorControl* pColorControl = nullptr;
+        HRESULT hrColor = m_pVideoDisplay->QueryInterface(__uuidof(DX11VideoRenderer::IDX11VideoColorControl), (void**)&pColorControl);
+        if (SUCCEEDED(hrColor) && pColorControl)
+        {
+            pColorControl->SetColorControls(m_colorBrightness, m_colorContrast, m_colorHue, m_colorSaturation);
+            pColorControl->Release();
+        }
+    }
+
 }
 
 // Open URL
@@ -413,7 +492,7 @@ void VideoPlayer::OpenUrl(String^ url) {
     if (FAILED(hr)) {
         auto msg = String::Format("CloseSession failed: 0x{0:X}", hr);
         System::Diagnostics::Debug::WriteLine(msg);
-        System::Console::WriteLine(msg);
+        ManagedLogger::Log(msg);
     }
     
     if (SUCCEEDED(hr)) {
@@ -422,47 +501,45 @@ void VideoPlayer::OpenUrl(String^ url) {
         if (FAILED(hr)) {
             auto msg = String::Format("CreateSession failed: 0x{0:X}", hr);
             System::Diagnostics::Debug::WriteLine(msg);
-            System::Console::WriteLine(msg);
+            ManagedLogger::Log(msg);
         }
     }
     
     if (SUCCEEDED(hr)) {
-        // Create media source
-        System::Console::WriteLine("Opening: " + url);
+        ManagedLogger::Log("Opening: " + url);
         hr = CreateMediaSource(url);
         if (FAILED(hr)) {
             auto msg = String::Format("CreateMediaSource failed: 0x{0:X}", hr);
             System::Diagnostics::Debug::WriteLine(msg);
-            System::Console::WriteLine(msg);
+            ManagedLogger::Log(msg);
         }
     }
     
     if (SUCCEEDED(hr)) {
-        // Create topology
         IMFTopology* pTopology = nullptr;
-        System::Console::WriteLine("Creating topology...");
+        ManagedLogger::Log("Creating topology...");
         hr = CreateTopologyFromSource(&pTopology);
         if (FAILED(hr)) {
             auto msg = String::Format("CreateTopologyFromSource failed: 0x{0:X}", hr);
             System::Diagnostics::Debug::WriteLine(msg);
-            System::Console::WriteLine(msg);
+            ManagedLogger::Log(msg);
         } else if (SUCCEEDED(hr)) {
             m_pTopology = pTopology;
-            System::Console::WriteLine("Topology created successfully");
+            ManagedLogger::Log("Topology created successfully");
         }
     }
     
     if (SUCCEEDED(hr) && m_pTopology != nullptr) {
         // Set topology on session
-        System::Console::WriteLine("Setting topology on session...");
+        ManagedLogger::Log("Setting topology on session...");
         hr = m_pSession->SetTopology(0, m_pTopology);
         if (FAILED(hr)) {
             auto msg = String::Format("SetTopology failed: 0x{0:X}", hr);
             System::Diagnostics::Debug::WriteLine(msg);
-            System::Console::WriteLine(msg);
+            ManagedLogger::Log(msg);
         } else {
             m_state = PlayerState::OpenPending;
-            System::Console::WriteLine("Topology set successfully");
+            ManagedLogger::Log("Topology set successfully");
         }
     }
     
@@ -476,11 +553,11 @@ void VideoPlayer::OpenUrl(String^ url) {
 
 // Play
 void VideoPlayer::Play() {
-    System::Console::WriteLine(String::Format("[MFVideoPlayer] Play() called - Session={0}, State={1}", 
+    ManagedLogger::Log(String::Format("[MFVideoPlayer] Play() called - Session={0}, State={1}", 
         (m_pSession != nullptr ? "valid" : "null"), (int)m_state));
     
     if (m_pSession == nullptr) {
-        System::Console::WriteLine("[MFVideoPlayer] Play() failed - no session");
+        ManagedLogger::Log("[MFVideoPlayer] Play() failed - no session");
         return;
     }
     
@@ -488,7 +565,7 @@ void VideoPlayer::Play() {
     PropVariantInit(&varStart);
     
     HRESULT hr = m_pSession->Start(&GUID_NULL, &varStart);
-    System::Console::WriteLine(String::Format("[MFVideoPlayer] Session->Start() returned: 0x{0:X}", hr));
+    ManagedLogger::Log(String::Format("[MFVideoPlayer] Session->Start() returned: 0x{0:X}", hr));
     
     if (SUCCEEDED(hr)) {
         m_state = PlayerState::Started;
@@ -740,7 +817,7 @@ HRESULT VideoPlayer::CreateTopologyFromSource(IMFTopology** ppTopology) {
     if (FAILED(hr)) {
         auto msg = String::Format("MFCreateTopology failed: 0x{0:X}", hr);
         System::Diagnostics::Debug::WriteLine(msg);
-        System::Console::WriteLine(msg);
+        ManagedLogger::Log(msg);
         return hr;
     }
     
@@ -754,23 +831,23 @@ HRESULT VideoPlayer::CreateTopologyFromSource(IMFTopology** ppTopology) {
     //       software decoding. The DX11VideoRenderer also handles software buffers as fallback.
     hr = pTopology->SetUINT32(MF_TOPOLOGY_HARDWARE_MODE, MFTOPOLOGY_HWMODE_USE_HARDWARE);
     if (FAILED(hr)) {
-        System::Console::WriteLine(String::Format("[MFVideoPlayer] Warning: Failed to set hardware mode: 0x{0:X} (will use software)", hr));
+        ManagedLogger::Log(String::Format("[MFVideoPlayer] Warning: Failed to set hardware mode: 0x{0:X} (will use software)", hr));
     } else {
-        System::Console::WriteLine("[MFVideoPlayer] Hardware MFT mode enabled (with software fallback)");
+        ManagedLogger::Log("[MFVideoPlayer] Hardware MFT mode enabled (with software fallback)");
     }
     
     hr = pTopology->SetUINT32(MF_TOPOLOGY_DXVA_MODE, MFTOPOLOGY_DXVA_FULL);
     if (FAILED(hr)) {
-        System::Console::WriteLine(String::Format("[MFVideoPlayer] Warning: Failed to set DXVA mode: 0x{0:X} (will use software rendering)", hr));
+        ManagedLogger::Log(String::Format("[MFVideoPlayer] Warning: Failed to set DXVA mode: 0x{0:X} (will use software rendering)", hr));
     } else {
-        System::Console::WriteLine("[MFVideoPlayer] DXVA full acceleration enabled");
+        ManagedLogger::Log("[MFVideoPlayer] DXVA full acceleration enabled");
     }
     
     hr = m_pPresentationDescriptor->GetStreamDescriptorCount(&sourceStreams);
     if (FAILED(hr)) {
         auto msg = String::Format("GetStreamDescriptorCount failed: 0x{0:X}", hr);
         System::Diagnostics::Debug::WriteLine(msg);
-        System::Console::WriteLine(msg);
+        ManagedLogger::Log(msg);
         SafeRelease(pTopology);
         return hr;
     }
@@ -778,12 +855,12 @@ HRESULT VideoPlayer::CreateTopologyFromSource(IMFTopology** ppTopology) {
     if (sourceStreams == 0) {
         String^ msg = "No streams found in presentation descriptor";
         System::Diagnostics::Debug::WriteLine(msg);
-        System::Console::WriteLine(msg);
+        ManagedLogger::Log(msg);
         SafeRelease(pTopology);
         return E_UNEXPECTED;
     }
     
-    System::Console::WriteLine(String::Format("Found {0} stream(s)", sourceStreams));
+    ManagedLogger::Log(String::Format("Found {0} stream(s)", sourceStreams));
     
     // Add each stream to the topology
     for (DWORD i = 0; i < sourceStreams; i++) {
@@ -795,10 +872,10 @@ HRESULT VideoPlayer::CreateTopologyFromSource(IMFTopology** ppTopology) {
             }
             auto msg = String::Format("AddBranchToPartialTopology failed for stream {0}: 0x{1:X}", i, hr);
             System::Diagnostics::Debug::WriteLine(msg);
-            System::Console::WriteLine(msg);
+            ManagedLogger::Log(msg);
             // Continue with other streams even if one fails
         } else {
-            System::Console::WriteLine(String::Format("Stream {0} added successfully", i));
+            ManagedLogger::Log(String::Format("Stream {0} added successfully", i));
         }
     }
     
@@ -821,7 +898,7 @@ HRESULT VideoPlayer::AddBranchToPartialTopology(IMFTopology* pTopology, IMFPrese
     HRESULT hr = pPD->GetStreamDescriptorByIndex(iStream, &selected, &pSD);
     if (FAILED(hr)) {
         System::Diagnostics::Debug::WriteLine(String::Format("GetStreamDescriptorByIndex failed: 0x{0:X}", hr));
-        System::Console::WriteLine(String::Format("GetStreamDescriptorByIndex failed: 0x{0:X}", hr));
+        ManagedLogger::Log(String::Format("GetStreamDescriptorByIndex failed: 0x{0:X}", hr));
         return hr;
     }
     
@@ -834,7 +911,7 @@ HRESULT VideoPlayer::AddBranchToPartialTopology(IMFTopology* pTopology, IMFPrese
     hr = CreateSourceStreamNode(pPD, pSD, &pSourceNode);
     if (FAILED(hr)) {
         System::Diagnostics::Debug::WriteLine(String::Format("CreateSourceStreamNode failed: 0x{0:X}", hr));
-        System::Console::WriteLine(String::Format("CreateSourceStreamNode failed: 0x{0:X}", hr));
+        ManagedLogger::Log(String::Format("CreateSourceStreamNode failed: 0x{0:X}", hr));
         SafeRelease(pSD);
         return hr;
     }
@@ -843,20 +920,20 @@ HRESULT VideoPlayer::AddBranchToPartialTopology(IMFTopology* pTopology, IMFPrese
     if (FAILED(hr)) {
         if (hr == E_NOINTERFACE) {
             // Stream type not supported (e.g., subtitles) - skip silently
-            System::Console::WriteLine(String::Format("Stream {0} skipped (unsupported type)", iStream));
+            ManagedLogger::Log(String::Format("Stream {0} skipped (unsupported type)", iStream));
         } else {
             System::Diagnostics::Debug::WriteLine(String::Format("CreateOutputNode failed: 0x{0:X}", hr));
-            System::Console::WriteLine(String::Format("CreateOutputNode failed: 0x{0:X}", hr));
+            ManagedLogger::Log(String::Format("CreateOutputNode failed: 0x{0:X}", hr));
         }
         SafeRelease(pSD);
         SafeRelease(pSourceNode);
         return hr;
     }
-    
+
     hr = pTopology->AddNode(pSourceNode);
     if (FAILED(hr)) {
         System::Diagnostics::Debug::WriteLine(String::Format("AddNode (source) failed: 0x{0:X}", hr));
-        System::Console::WriteLine(String::Format("AddNode (source) failed: 0x{0:X}", hr));
+        ManagedLogger::Log(String::Format("AddNode (source) failed: 0x{0:X}", hr));
         SafeRelease(pSD);
         SafeRelease(pSourceNode);
         SafeRelease(pOutputNode);
@@ -866,17 +943,18 @@ HRESULT VideoPlayer::AddBranchToPartialTopology(IMFTopology* pTopology, IMFPrese
     hr = pTopology->AddNode(pOutputNode);
     if (FAILED(hr)) {
         System::Diagnostics::Debug::WriteLine(String::Format("AddNode (output) failed: 0x{0:X}", hr));
-        System::Console::WriteLine(String::Format("AddNode (output) failed: 0x{0:X}", hr));
+        ManagedLogger::Log(String::Format("AddNode (output) failed: 0x{0:X}", hr));
         SafeRelease(pSD);
         SafeRelease(pSourceNode);
         SafeRelease(pOutputNode);
         return hr;
     }
-    
+
     hr = pSourceNode->ConnectOutput(0, pOutputNode, 0);
+
     if (FAILED(hr)) {
         System::Diagnostics::Debug::WriteLine(String::Format("ConnectOutput failed: 0x{0:X}", hr));
-        System::Console::WriteLine(String::Format("ConnectOutput failed: 0x{0:X}", hr));
+        ManagedLogger::Log(String::Format("ConnectOutput failed: 0x{0:X}", hr));
     }
     
     SafeRelease(pSD);
@@ -934,12 +1012,12 @@ HRESULT VideoPlayer::CreateOutputNode(IMFStreamDescriptor* pSD, IMFTopologyNode*
     if (SUCCEEDED(hr)) {
         if (guidMajorType == MFMediaType_Audio) {
             hr = MFCreateAudioRendererActivate(&pActivate);
-            System::Console::WriteLine(String::Format("[MFVideoPlayer] MFCreateAudioRendererActivate result: 0x{0:X}", hr));
+            ManagedLogger::Log(String::Format("[MFVideoPlayer] MFCreateAudioRendererActivate result: 0x{0:X}", hr));
         }
         else if (guidMajorType == MFMediaType_Video) {
             // Check if video window is valid before creating video renderer
             if (m_hwndVideo == nullptr || !IsWindow(m_hwndVideo)) {
-                System::Console::WriteLine(String::Format("[MFVideoPlayer] WARNING: Invalid video window hwnd={0}", (IntPtr)m_hwndVideo));
+                ManagedLogger::Log(String::Format("[MFVideoPlayer] WARNING: Invalid video window hwnd={0}", (IntPtr)m_hwndVideo));
                 SafeRelease(pHandler);
                 return E_FAIL;  // Cannot create video renderer without valid window
             }
@@ -948,27 +1026,27 @@ HRESULT VideoPlayer::CreateOutputNode(IMFStreamDescriptor* pSD, IMFTopologyNode*
             // Use Microsoft sample DX11VideoRenderer DLL for testing
             // Following the TopoEdit pattern: activate, get sink, get stream sink
             hr = CreateMSDX11VideoRendererActivate(m_hwndVideo, &pActivate);
-            System::Console::WriteLine(String::Format("[MFVideoPlayer] Using MS DX11VideoRenderer DLL, result: 0x{0:X}, hwnd={1}", hr, (IntPtr)m_hwndVideo));
+            ManagedLogger::Log(String::Format("[MFVideoPlayer] Using MS DX11VideoRenderer DLL, result: 0x{0:X}, hwnd={1}", hr, (IntPtr)m_hwndVideo));
             
             if (SUCCEEDED(hr)) {
                 // Activate the sink and get the stream sink (like TopoEdit does)
                 hr = pActivate->ActivateObject(IID_IMFMediaSink, (void**)&pSink);
-                System::Console::WriteLine(String::Format("[MFVideoPlayer] ActivateObject(IMFMediaSink) result: 0x{0:X}", hr));
+                ManagedLogger::Log(String::Format("[MFVideoPlayer] ActivateObject(IMFMediaSink) result: 0x{0:X}", hr));
             }
             
             if (SUCCEEDED(hr)) {
                 // MS sample uses stream ID 1, not 0
                 hr = pSink->GetStreamSinkById(1, &pStreamSink);
-                System::Console::WriteLine(String::Format("[MFVideoPlayer] GetStreamSinkById(1) result: 0x{0:X}", hr));
+                ManagedLogger::Log(String::Format("[MFVideoPlayer] GetStreamSinkById(1) result: 0x{0:X}", hr));
             }
 #elif USE_DX11_RENDERER
             // Use custom DX11 Video Renderer with stored GPU adapter index
             hr = DX11VideoRenderer::CreateDX11VideoRendererActivate(m_hwndVideo, &pActivate, m_gpuAdapterIndex);
-            System::Console::WriteLine(String::Format("[MFVideoPlayer] CreateDX11VideoRendererActivate result: 0x{0:X}, hwnd={1}, GPU={2}", hr, (IntPtr)m_hwndVideo, m_gpuAdapterIndex));
+            ManagedLogger::Log(String::Format("[MFVideoPlayer] CreateDX11VideoRendererActivate result: 0x{0:X}, hwnd={1}, GPU={2}", hr, (IntPtr)m_hwndVideo, m_gpuAdapterIndex));
 #else
             // Use EVR (Enhanced Video Renderer)
             hr = MFCreateVideoRendererActivate(m_hwndVideo, &pActivate);
-            System::Console::WriteLine(String::Format("[MFVideoPlayer] MFCreateVideoRendererActivate result: 0x{0:X}, hwnd={1}", hr, (IntPtr)m_hwndVideo));
+            ManagedLogger::Log(String::Format("[MFVideoPlayer] MFCreateVideoRendererActivate result: 0x{0:X}, hwnd={1}", hr, (IntPtr)m_hwndVideo));
 #endif
         }
         else {
@@ -988,7 +1066,7 @@ HRESULT VideoPlayer::CreateOutputNode(IMFStreamDescriptor* pSD, IMFTopologyNode*
         // For MS DX11 renderer, set the stream sink (not the activate)
         if (pStreamSink != nullptr) {
             hr = pNode->SetObject(pStreamSink);
-            System::Console::WriteLine(String::Format("[MFVideoPlayer] SetObject(StreamSink) result: 0x{0:X}", hr));
+            ManagedLogger::Log(String::Format("[MFVideoPlayer] SetObject(StreamSink) result: 0x{0:X}", hr));
         } else {
             hr = pNode->SetObject(pActivate);
         }
@@ -1020,7 +1098,7 @@ HRESULT VideoPlayer::HandleEvent(IMFMediaEvent* pEvent) {
     MediaEventType meType = MEUnknown;
     HRESULT hr = pEvent->GetType(&meType);
     
-    System::Console::WriteLine(String::Format("[MFVideoPlayer] HandleEvent - Type={0}", (int)meType));
+    ManagedLogger::Log(String::Format("[MFVideoPlayer] HandleEvent - Type={0}", (int)meType));
     
     if (SUCCEEDED(hr)) {
         switch (meType) {
@@ -1028,9 +1106,9 @@ HRESULT VideoPlayer::HandleEvent(IMFMediaEvent* pEvent) {
                 {
                     UINT32 status = 0;
                     hr = pEvent->GetUINT32(MF_EVENT_TOPOLOGY_STATUS, &status);
-                    System::Console::WriteLine(String::Format("[MFVideoPlayer] TopologyStatus={0}, hr=0x{1:X}", status, hr));
+                    ManagedLogger::Log(String::Format("[MFVideoPlayer] TopologyStatus={0}, hr=0x{1:X}", status, hr));
                     if (SUCCEEDED(hr) && status == MF_TOPOSTATUS_READY) {
-                        System::Console::WriteLine("[MFVideoPlayer] Topology is READY - getting video display control");
+                        ManagedLogger::Log("[MFVideoPlayer] Topology is READY - getting video display control");
                         if (m_pVideoDisplay) {
                             m_pVideoDisplay->Release();
                             m_pVideoDisplay = nullptr;
@@ -1039,7 +1117,7 @@ HRESULT VideoPlayer::HandleEvent(IMFMediaEvent* pEvent) {
                         // Use local pointer to avoid interior_ptr issues with IID_PPV_ARGS
                         IMFVideoDisplayControl* pDisplay = nullptr;
                         hr = MFGetService(m_pSession, MR_VIDEO_RENDER_SERVICE, IID_PPV_ARGS(&pDisplay));
-                        System::Console::WriteLine(String::Format("[MFVideoPlayer] MFGetService result: hr=0x{0:X}, pDisplay={1}", hr, (pDisplay != nullptr ? "valid" : "null")));
+                        ManagedLogger::Log(String::Format("[MFVideoPlayer] MFGetService result: hr=0x{0:X}, pDisplay={1}", hr, (pDisplay != nullptr ? "valid" : "null")));
                         
                         if (SUCCEEDED(hr)) {
                             m_pVideoDisplay = pDisplay;
@@ -1049,25 +1127,25 @@ HRESULT VideoPlayer::HandleEvent(IMFMediaEvent* pEvent) {
                             // This may help with minimized window rendering
                             DWORD renderPrefs = 0x2; // MFVideoRenderPrefs_DoNotClipToDevice
                             HRESULT hrPrefs = m_pVideoDisplay->SetRenderingPrefs(renderPrefs);
-                            System::Console::WriteLine(String::Format("[MFVideoPlayer] SetRenderingPrefs(0x{0:X}) result: 0x{1:X}", renderPrefs, hrPrefs));
+                            ManagedLogger::Log(String::Format("[MFVideoPlayer] SetRenderingPrefs(0x{0:X}) result: 0x{1:X}", renderPrefs, hrPrefs));
 
                             // Re-apply user sharpen settings after topology/render service becomes ready.
                             DWORD sharpenMilli = static_cast<DWORD>(Math::Clamp(m_sharpenStrength, 0.0, 1.0) * 1000.0 + 0.5);
                             DWORD thresholdMilli = static_cast<DWORD>(Math::Clamp(m_sharpenThreshold / 0.02, 0.0, 1.0) * 1000.0 + 0.5);
                             DWORD sharpenPrefs = (sharpenMilli & 0xFFFFu) | ((thresholdMilli & 0xFFFFu) << 16);
                             HRESULT hrSharpen = m_pVideoDisplay->SetRenderingPrefs(sharpenPrefs);
-                            System::Console::WriteLine(String::Format("[MFVideoPlayer] SetRenderingPrefs(sharpen=0x{0:X}) result: 0x{1:X}", sharpenPrefs, hrSharpen));
+                            ManagedLogger::Log(String::Format("[MFVideoPlayer] SetRenderingPrefs(sharpen=0x{0:X}) result: 0x{1:X}", sharpenPrefs, hrSharpen));
                             
                             // Update video position
                             if (m_hwndVideo) {
                                 RECT rc;
                                 GetClientRect(m_hwndVideo, &rc);
-                                System::Console::WriteLine(String::Format("[MFVideoPlayer] Setting video position: {0}x{1}", rc.right, rc.bottom));
+                                ManagedLogger::Log(String::Format("[MFVideoPlayer] Setting video position: {0}x{1}", rc.right, rc.bottom));
                                 m_pVideoDisplay->SetVideoPosition(nullptr, &rc);
                             }
                             
                             m_state = PlayerState::Ready;
-                            System::Console::WriteLine("[MFVideoPlayer] State set to Ready, firing MediaOpened");
+                            ManagedLogger::Log("[MFVideoPlayer] State set to Ready, firing MediaOpened");
                             MediaOpened(this, EventArgs::Empty);
                         }
                     }
@@ -1075,22 +1153,22 @@ HRESULT VideoPlayer::HandleEvent(IMFMediaEvent* pEvent) {
                 break;
                 
             case MESessionStarted:
-                System::Console::WriteLine("[MFVideoPlayer] MESessionStarted received");
+                ManagedLogger::Log("[MFVideoPlayer] MESessionStarted received");
                 m_state = PlayerState::Started;
                 break;
                 
             case MESessionPaused:
-                System::Console::WriteLine("[MFVideoPlayer] MESessionPaused received");
+                ManagedLogger::Log("[MFVideoPlayer] MESessionPaused received");
                 m_state = PlayerState::Paused;
                 break;
                 
             case MESessionStopped:
-                System::Console::WriteLine("[MFVideoPlayer] MESessionStopped received");
+                ManagedLogger::Log("[MFVideoPlayer] MESessionStopped received");
                 m_state = PlayerState::Stopped;
                 break;
                 
             case MESessionEnded:
-                System::Console::WriteLine("[MFVideoPlayer] MESessionEnded received");
+                ManagedLogger::Log("[MFVideoPlayer] MESessionEnded received");
                 m_state = PlayerState::Stopped;
                 MediaEnded(this, EventArgs::Empty);
                 break;
@@ -1099,7 +1177,7 @@ HRESULT VideoPlayer::HandleEvent(IMFMediaEvent* pEvent) {
                 {
                     HRESULT hrStatus = S_OK;
                     pEvent->GetStatus(&hrStatus);
-                    System::Console::WriteLine(String::Format("[MFVideoPlayer] MEError received: 0x{0:X}", hrStatus));
+                    ManagedLogger::Log(String::Format("[MFVideoPlayer] MEError received: 0x{0:X}", hrStatus));
                 }
                 MediaFailed(this, EventArgs::Empty);
                 break;
@@ -1128,7 +1206,7 @@ STDMETHODIMP CPlayerCallback::Invoke(IMFAsyncResult* pResult) {
     HRESULT hr = pSession->EndGetEvent(pResult, &pEvent);
     
     if (FAILED(hr)) {
-        System::Console::WriteLine(String::Format("[CPlayerCallback] EndGetEvent failed: 0x{0:X}", hr));
+        ManagedLogger::Log(String::Format("[CPlayerCallback] EndGetEvent failed: 0x{0:X}", hr));
         return hr;
     }
     
@@ -1141,13 +1219,13 @@ STDMETHODIMP CPlayerCallback::Invoke(IMFAsyncResult* pResult) {
     hr = pEvent->GetType(&meType);
     
     if (SUCCEEDED(hr)) {
-        System::Console::WriteLine(String::Format("[CPlayerCallback] Invoke - Event type: {0}", (int)meType));
+        ManagedLogger::Log(String::Format("[CPlayerCallback] Invoke - Event type: {0}", (int)meType));
         
         // For all events except MESessionClosed, request the next event
         if (meType != MESessionClosed) {
             hr = pSession->BeginGetEvent(this, nullptr);
             if (FAILED(hr)) {
-                System::Console::WriteLine(String::Format("[CPlayerCallback] BeginGetEvent failed: 0x{0:X}", hr));
+                ManagedLogger::Log(String::Format("[CPlayerCallback] BeginGetEvent failed: 0x{0:X}", hr));
             }
         }
         
@@ -1175,47 +1253,54 @@ List<GPUAdapterInfo^>^ VideoPlayer::EnumerateGPUs()
     HRESULT hr = CreateDXGIFactory1(__uuidof(IDXGIFactory1), (void**)&pFactory);
     if (FAILED(hr))
     {
-        System::Console::WriteLine(String::Format("[VideoPlayer] EnumerateGPUs: CreateDXGIFactory1 failed 0x{0:X}", hr));
+        ManagedLogger::Log(String::Format("[VideoPlayer] EnumerateGPUs: CreateDXGIFactory1 failed 0x{0:X}", hr));
         return gpuList;
     }
-    
+
     UINT adapterIndex = 0;
-    IDXGIAdapter* pAdapter = nullptr;
-    
-    while (SUCCEEDED(pFactory->EnumAdapters(adapterIndex, &pAdapter)))
+    IDXGIAdapter1* pAdapter = nullptr;
+    while ((hr = pFactory->EnumAdapters1(adapterIndex, &pAdapter)) != DXGI_ERROR_NOT_FOUND)
     {
-        DXGI_ADAPTER_DESC desc;
-        pAdapter->GetDesc(&desc);
-        
-        String^ description = gcnew String(desc.Description);
-        auto gpuInfo = gcnew GPUAdapterInfo(
-            adapterIndex,
-            description,
-            desc.VendorId,
-            desc.DeviceId,
-            desc.DedicatedVideoMemory,
-            desc.SharedSystemMemory
-        );
-        
-        gpuList->Add(gpuInfo);
-        
-        System::Console::WriteLine(String::Format(
-            "[VideoPlayer] GPU {0}: {1} - VRAM: {2} MB, Shared: {3} MB (Vendor: 0x{4:X}, Device: 0x{5:X})",
-            adapterIndex,
-            description,
-            desc.DedicatedVideoMemory / (1024 * 1024),
-            desc.SharedSystemMemory / (1024 * 1024),
-            desc.VendorId,
-            desc.DeviceId
-        ));
-        
+        if (FAILED(hr))
+        {
+            ManagedLogger::Log(String::Format("[VideoPlayer] EnumAdapters1 failed for index {0}, hr=0x{1:X}", adapterIndex, hr));
+            break;
+        }
+
+        DXGI_ADAPTER_DESC1 desc = {};
+        HRESULT hrDesc = pAdapter->GetDesc1(&desc);
+        if (SUCCEEDED(hrDesc))
+        {
+            String^ description = gcnew String(desc.Description);
+            auto gpuInfo = gcnew GPUAdapterInfo(
+                adapterIndex,
+                description,
+                desc.VendorId,
+                desc.DeviceId,
+                desc.DedicatedVideoMemory,
+                desc.SharedSystemMemory);
+
+            gpuList->Add(gpuInfo);
+
+            ManagedLogger::Log(String::Format(
+                "[VideoPlayer] GPU {0}: {1} - VRAM: {2} MB, Shared: {3} MB (Vendor: 0x{4:X}, Device: 0x{5:X})",
+                adapterIndex,
+                description,
+                desc.DedicatedVideoMemory / (1024 * 1024),
+                desc.SharedSystemMemory / (1024 * 1024),
+                desc.VendorId,
+                desc.DeviceId));
+        }
+
         pAdapter->Release();
+        pAdapter = nullptr;
         adapterIndex++;
     }
-    
+
+    if (pAdapter) pAdapter->Release();
     if (pFactory) pFactory->Release();
-    
-    System::Console::WriteLine(String::Format("[VideoPlayer] Found {0} GPU adapters", gpuList->Count));
+
+    ManagedLogger::Log(String::Format("[VideoPlayer] Found {0} GPU adapters", gpuList->Count));
     return gpuList;
 }
 
@@ -1223,7 +1308,7 @@ List<GPUAdapterInfo^>^ VideoPlayer::EnumerateGPUs()
 void VideoPlayer::SetGPUAdapter(unsigned int adapterIndex)
 {
     m_gpuAdapterIndex = adapterIndex;
-    System::Console::WriteLine(String::Format("[VideoPlayer] SetGPUAdapter: adapter index {0} stored for use during topology creation", adapterIndex));
+    ManagedLogger::Log(String::Format("[VideoPlayer] SetGPUAdapter: adapter index {0} stored for use during topology creation", adapterIndex));
 }
 
 } // end namespace Player

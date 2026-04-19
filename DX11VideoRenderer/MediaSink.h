@@ -28,7 +28,8 @@ namespace DX11VideoRenderer
         public IMFMediaSinkPreroll,
         public IMFGetService,
         public IMFRateSupport,
-        public IMFVideoDisplayControl
+        public IMFVideoDisplayControl,
+        public IDX11VideoColorControl
     {
     public:
         // Static creation method
@@ -88,6 +89,9 @@ namespace DX11VideoRenderer
         STDMETHODIMP GetRenderingPrefs(DWORD* pdwRenderFlags);
         STDMETHODIMP SetFullscreen(BOOL fFullscreen);
         STDMETHODIMP GetFullscreen(BOOL* pfFullscreen);
+
+        // IDX11VideoColorControl
+        STDMETHODIMP SetColorControls(int brightness, int contrast, int hue, int saturation) override;
 
     protected:
         CMediaSink(HWND hwndVideo, UINT gpuAdapterIndex = 0);

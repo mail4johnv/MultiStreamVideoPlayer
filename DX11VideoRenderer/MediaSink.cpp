@@ -239,6 +239,10 @@ STDMETHODIMP CMediaSink::QueryInterface(REFIID riid, void** ppv)
     {
         *ppv = static_cast<IMFVideoDisplayControl*>(this);
     }
+    else if (riid == __uuidof(IDX11VideoColorControl))
+    {
+        *ppv = static_cast<IDX11VideoColorControl*>(this);
+    }
     else
     {
         *ppv = nullptr;
@@ -1269,6 +1273,24 @@ STDMETHODIMP CMediaSink::GetFullscreen(BOOL* pfFullscreen)
 
     *pfFullscreen = m_bFullscreen;
     return S_OK;
+}
+
+STDMETHODIMP CMediaSink::SetColorControls(int brightness, int contrast, int hue, int saturation)
+{
+    CAutoLock lock(&m_critSec);
+
+    HRESULT hr = CheckShutdown();
+    if (FAILED(hr))
+    {
+        return hr;
+    }
+
+    if (!m_spPresenter)
+    {
+        return E_UNEXPECTED;
+    }
+
+    return m_spPresenter->SetColorControls(brightness, contrast, hue, saturation);
 }
 
 // Private

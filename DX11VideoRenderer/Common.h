@@ -88,6 +88,18 @@
 
 namespace DX11VideoRenderer
 {
+    // Custom control interface exposed by the DX11 renderer for runtime color adjustments.
+    MIDL_INTERFACE("3F415F8C-4F66-4F46-9F91-6B7B7CF4E5A1")
+    IDX11VideoColorControl : public IUnknown
+    {
+    public:
+        virtual HRESULT STDMETHODCALLTYPE SetColorControls(
+            int brightness,
+            int contrast,
+            int hue,
+            int saturation) = 0;
+    };
+
     // Safe release template
     template <class T>
     inline void SafeRelease(T*& p)

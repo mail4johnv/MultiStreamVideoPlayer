@@ -56,6 +56,18 @@ public partial class MainViewModel : ObservableObject
     private double _sharpenThreshold = 0.0;
 
     [ObservableProperty]
+    private int _brightness = 0;
+
+    [ObservableProperty]
+    private int _contrast = 0;
+
+    [ObservableProperty]
+    private int _hue = 0;
+
+    [ObservableProperty]
+    private int _saturation = 0;
+
+    [ObservableProperty]
     private DateTime? _timelineStartTime;
 
     [ObservableProperty]
@@ -80,6 +92,8 @@ public partial class MainViewModel : ObservableObject
     public double SharpenStrengthMax => 1.0;
     public double SharpenThresholdMin => 0.0;
     public double SharpenThresholdMax => 0.02;
+    public int ColorMin => -127;
+    public int ColorMax => 127;
 
     public MainViewModel()
     {
@@ -294,6 +308,10 @@ public partial class MainViewModel : ObservableObject
                 _nativePlayers.Add(nativePlayer);
                 nativePlayer.SharpenStrength = SharpenStrength;
                 nativePlayer.SharpenThreshold = SharpenThreshold;
+                nativePlayer.Brightness = Brightness;
+                nativePlayer.Contrast = Contrast;
+                nativePlayer.Hue = Hue;
+                nativePlayer.Saturation = Saturation;
                 //Console.WriteLine($"[MainViewModel] Added NativeMediaPlayer - Source={nativePlayer.Source}, total count: {_nativePlayers.Count}");
                 nativePlayer.MediaOpened += (s, e) =>
                 {
@@ -881,6 +899,66 @@ public partial class MainViewModel : ObservableObject
         foreach (var nativePlayer in _nativePlayers)
         {
             nativePlayer.SharpenThreshold = clamped;
+        }
+    }
+
+    partial void OnBrightnessChanged(int value)
+    {
+        var clamped = Math.Clamp(value, ColorMin, ColorMax);
+        if (clamped != value)
+        {
+            Brightness = clamped;
+            return;
+        }
+
+        foreach (var nativePlayer in _nativePlayers)
+        {
+            nativePlayer.Brightness = clamped;
+        }
+    }
+
+    partial void OnContrastChanged(int value)
+    {
+        var clamped = Math.Clamp(value, ColorMin, ColorMax);
+        if (clamped != value)
+        {
+            Contrast = clamped;
+            return;
+        }
+
+        foreach (var nativePlayer in _nativePlayers)
+        {
+            nativePlayer.Contrast = clamped;
+        }
+    }
+
+    partial void OnHueChanged(int value)
+    {
+        var clamped = Math.Clamp(value, ColorMin, ColorMax);
+        if (clamped != value)
+        {
+            Hue = clamped;
+            return;
+        }
+
+        foreach (var nativePlayer in _nativePlayers)
+        {
+            nativePlayer.Hue = clamped;
+        }
+    }
+
+    partial void OnSaturationChanged(int value)
+    {
+        var clamped = Math.Clamp(value, ColorMin, ColorMax);
+        if (clamped != value)
+        {
+            Saturation = clamped;
+            return;
+        }
+
+        foreach (var nativePlayer in _nativePlayers)
+        {
+            nativePlayer.Saturation = clamped;
         }
     }
 

@@ -136,6 +136,10 @@
                                     <controls:NativeMediaPlayer Source="{Binding FilePath}"
                                                                 SharpenStrength="{Binding DataContext.SharpenStrength, RelativeSource={RelativeSource AncestorType=Window}}"
                                                                 SharpenThreshold="{Binding DataContext.SharpenThreshold, RelativeSource={RelativeSource AncestorType=Window}}"
+                                                                Brightness="{Binding DataContext.Brightness, RelativeSource={RelativeSource AncestorType=Window}}"
+                                                                Contrast="{Binding DataContext.Contrast, RelativeSource={RelativeSource AncestorType=Window}}"
+                                                                Hue="{Binding DataContext.Hue, RelativeSource={RelativeSource AncestorType=Window}}"
+                                                                Saturation="{Binding DataContext.Saturation, RelativeSource={RelativeSource AncestorType=Window}}"
                                                                 Tag="{Binding}"
                                                                 Loaded="MediaElement_Loaded"
                                                                 Unloaded="MediaElement_Unloaded" />
@@ -270,6 +274,90 @@
                                            Foreground="{StaticResource TextBrush}"
                                            FontSize="12"
                                            Width="38" />
+
+                                        <TextBlock Text="Brightness"
+                                               Margin="10,0,6,0"
+                                               VerticalAlignment="Center"
+                                               Foreground="{StaticResource TextBrush}"
+                                               FontSize="12" />
+                                        <Slider Width="110"
+                                            Minimum="{Binding ColorMin}"
+                                            Maximum="{Binding ColorMax}"
+                                            SmallChange="1"
+                                            TickFrequency="8"
+                                            IsSnapToTickEnabled="False"
+                                            Value="{Binding Brightness, UpdateSourceTrigger=PropertyChanged}"
+                                            VerticalAlignment="Center"
+                                            Style="{StaticResource ModernSlider}" />
+                                        <TextBlock Text="{Binding Brightness}"
+                                               Margin="6,0,0,0"
+                                               VerticalAlignment="Center"
+                                               Foreground="{StaticResource TextBrush}"
+                                               FontSize="12"
+                                               Width="38" />
+
+                                        <TextBlock Text="Contrast"
+                                               Margin="10,0,6,0"
+                                               VerticalAlignment="Center"
+                                               Foreground="{StaticResource TextBrush}"
+                                               FontSize="12" />
+                                        <Slider Width="110"
+                                            Minimum="{Binding ColorMin}"
+                                            Maximum="{Binding ColorMax}"
+                                            SmallChange="1"
+                                            TickFrequency="8"
+                                            IsSnapToTickEnabled="False"
+                                            Value="{Binding Contrast, UpdateSourceTrigger=PropertyChanged}"
+                                            VerticalAlignment="Center"
+                                            Style="{StaticResource ModernSlider}" />
+                                        <TextBlock Text="{Binding Contrast}"
+                                               Margin="6,0,0,0"
+                                               VerticalAlignment="Center"
+                                               Foreground="{StaticResource TextBrush}"
+                                               FontSize="12"
+                                               Width="38" />
+
+                                        <TextBlock Text="Hue"
+                                               Margin="10,0,6,0"
+                                               VerticalAlignment="Center"
+                                               Foreground="{StaticResource TextBrush}"
+                                               FontSize="12" />
+                                        <Slider Width="110"
+                                            Minimum="{Binding ColorMin}"
+                                            Maximum="{Binding ColorMax}"
+                                            SmallChange="1"
+                                            TickFrequency="8"
+                                            IsSnapToTickEnabled="False"
+                                            Value="{Binding Hue, UpdateSourceTrigger=PropertyChanged}"
+                                            VerticalAlignment="Center"
+                                            Style="{StaticResource ModernSlider}" />
+                                        <TextBlock Text="{Binding Hue}"
+                                               Margin="6,0,0,0"
+                                               VerticalAlignment="Center"
+                                               Foreground="{StaticResource TextBrush}"
+                                               FontSize="12"
+                                               Width="38" />
+
+                                        <TextBlock Text="Saturation"
+                                               Margin="10,0,6,0"
+                                               VerticalAlignment="Center"
+                                               Foreground="{StaticResource TextBrush}"
+                                               FontSize="12" />
+                                        <Slider Width="110"
+                                            Minimum="{Binding ColorMin}"
+                                            Maximum="{Binding ColorMax}"
+                                            SmallChange="1"
+                                            TickFrequency="8"
+                                            IsSnapToTickEnabled="False"
+                                            Value="{Binding Saturation, UpdateSourceTrigger=PropertyChanged}"
+                                            VerticalAlignment="Center"
+                                            Style="{StaticResource ModernSlider}" />
+                                        <TextBlock Text="{Binding Saturation}"
+                                               Margin="6,0,0,0"
+                                               VerticalAlignment="Center"
+                                               Foreground="{StaticResource TextBrush}"
+                                               FontSize="12"
+                                               Width="38" />
                         </StackPanel>
 
                         <!-- Right Side: Playback Controls -->

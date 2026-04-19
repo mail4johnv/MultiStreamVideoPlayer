@@ -19,7 +19,7 @@ This application demonstrates advanced video playback capabilities with:
 - **WPF Framework** - Windows Presentation Foundation for UI
 - **MVVM Pattern** - CommunityToolkit.Mvvm 8.2.2
 - **Windows Media Foundation** - Video playback engine (via C++/CLI wrapper)
-- **DirectX 11** - GPU-accelerated rendering (via DX11VideoRenderer)
+- **DirectX 11** - GPU-accelerated rendering with HLSL sharpening and color controls (via DX11VideoRenderer)
 
 ## Features
 
@@ -47,7 +47,15 @@ This application demonstrates advanced video playback capabilities with:
 - **Auto-Skip** - When all streams are in gap, playhead auto-advances to next segment
 - **Smart Seeking** - Account for gaps when calculating seek positions
 
-### Audio & Volume
+### Video Enhancement Controls
+- **Sharpening** - `Sharpen` slider (0.0–1.0) and `Threshold` slider (0.0–0.02); luma-only Laplacian shader
+- **Brightness** - Slider range -127 to +127; shifts luma
+- **Contrast** - Slider range -127 to +127; scales luma around midpoint
+- **Hue** - Slider range -127 to +127; rotates CbCr colour plane
+- **Saturation** - Slider range -127 to +127; scales chroma amplitude
+- All controls apply to every playing stream simultaneously and update paused frames in real time
+
+
 - **Single Audio Stream** - First video provides audio (by design for multi-stream scenarios)
 - **Volume Control** - Slider adjusts audio level from 0-100%
 - **Mute Button** - Toggle mute for audio output
@@ -148,6 +156,10 @@ bool IsPlaying                                               // Playback state
 double Volume                                                // Volume (0-1)
 bool IsMuted                                                 // Mute state
 int GridRows, GridColumns                                    // Calculated grid layout
+double SharpenStrength                                       // 0.0 – 1.0
+double SharpenThreshold                                      // 0.0 – 0.02
+int Brightness, Contrast, Hue, Saturation                   // -127 – +127
+int ColorMin, ColorMax                                       // Constants: -127, 127
 ```
 
 **Commands:**

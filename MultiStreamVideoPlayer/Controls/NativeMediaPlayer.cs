@@ -56,6 +56,22 @@ public class NativeMediaPlayer : HwndHost
         DependencyProperty.Register(nameof(SharpenThreshold), typeof(double), typeof(NativeMediaPlayer),
             new PropertyMetadata(0.0, OnSharpenThresholdChanged));
 
+    public static readonly DependencyProperty BrightnessProperty =
+        DependencyProperty.Register(nameof(Brightness), typeof(int), typeof(NativeMediaPlayer),
+            new PropertyMetadata(0, OnBrightnessChanged));
+
+    public static readonly DependencyProperty ContrastProperty =
+        DependencyProperty.Register(nameof(Contrast), typeof(int), typeof(NativeMediaPlayer),
+            new PropertyMetadata(0, OnContrastChanged));
+
+    public static readonly DependencyProperty HueProperty =
+        DependencyProperty.Register(nameof(Hue), typeof(int), typeof(NativeMediaPlayer),
+            new PropertyMetadata(0, OnHueChanged));
+
+    public static readonly DependencyProperty SaturationProperty =
+        DependencyProperty.Register(nameof(Saturation), typeof(int), typeof(NativeMediaPlayer),
+            new PropertyMetadata(0, OnSaturationChanged));
+
     //public static readonly DependencyProperty TagProperty =
     //    DependencyProperty.Register(nameof(Tag), typeof(object), typeof(NativeMediaPlayer),
     //        new PropertyMetadata(null));
@@ -88,6 +104,30 @@ public class NativeMediaPlayer : HwndHost
     {
         get => (double)GetValue(SharpenThresholdProperty);
         set => SetValue(SharpenThresholdProperty, value);
+    }
+
+    public int Brightness
+    {
+        get => (int)GetValue(BrightnessProperty);
+        set => SetValue(BrightnessProperty, value);
+    }
+
+    public int Contrast
+    {
+        get => (int)GetValue(ContrastProperty);
+        set => SetValue(ContrastProperty, value);
+    }
+
+    public int Hue
+    {
+        get => (int)GetValue(HueProperty);
+        set => SetValue(HueProperty, value);
+    }
+
+    public int Saturation
+    {
+        get => (int)GetValue(SaturationProperty);
+        set => SetValue(SaturationProperty, value);
     }
 
     //public object? Tag
@@ -126,6 +166,10 @@ public class NativeMediaPlayer : HwndHost
         _player.SetGPUAdapter((uint)App.SelectedGPUAdapter);
         _player.SharpenStrength = SharpenStrength;
         _player.SharpenThreshold = SharpenThreshold;
+        _player.Brightness = Brightness;
+        _player.Contrast = Contrast;
+        _player.Hue = Hue;
+        _player.Saturation = Saturation;
         
         //Console.WriteLine($"[NativeMediaPlayer] VideoPlayer created - State={_player.State}");
         _player.MediaOpened += (s, e) =>
@@ -496,6 +540,42 @@ public class NativeMediaPlayer : HwndHost
                     ManagedLogger.LogError($"[NativeMediaPlayer] Error setting sharpen threshold: {ex.Message}");
                 }
             }
+        }
+    }
+
+    private static void OnBrightnessChanged(DependencyObject d, DependencyPropertyChangedEventArgs e)
+    {
+        if (d is NativeMediaPlayer player && e.NewValue is int brightness && player._player != null)
+        {
+            player._player.Brightness = brightness;
+            player.Repaint();
+        }
+    }
+
+    private static void OnContrastChanged(DependencyObject d, DependencyPropertyChangedEventArgs e)
+    {
+        if (d is NativeMediaPlayer player && e.NewValue is int contrast && player._player != null)
+        {
+            player._player.Contrast = contrast;
+            player.Repaint();
+        }
+    }
+
+    private static void OnHueChanged(DependencyObject d, DependencyPropertyChangedEventArgs e)
+    {
+        if (d is NativeMediaPlayer player && e.NewValue is int hue && player._player != null)
+        {
+            player._player.Hue = hue;
+            player.Repaint();
+        }
+    }
+
+    private static void OnSaturationChanged(DependencyObject d, DependencyPropertyChangedEventArgs e)
+    {
+        if (d is NativeMediaPlayer player && e.NewValue is int saturation && player._player != null)
+        {
+            player._player.Saturation = saturation;
+            player.Repaint();
         }
     }
 

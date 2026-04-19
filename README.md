@@ -4,7 +4,48 @@ A professional multi-stream video player application built with WPF/.NET 8 and W
 
 ## Session Updates
 
+- **2026-04-19**: Added runtime color controls (Brightness, Contrast, Hue, Saturation) via a custom DX11 renderer interface. All four controls have dedicated sliders in WPF and are applied in both playing and paused states.
 - **2026-04-12 23:51:57 IST**: Added real-time video sharpening (luma-only) to the DX11 renderer, including `Sharpen` and `Threshold` sliders in WPF with live value labels and paused-frame update support.
+
+### Color Controls Update (What Was Implemented)
+
+Color adjustments were added as a direct DX11 renderer-level feature, bypassing Media Foundation DSP insertion.
+
+**Why not MF DSP (`CLSID_CColorControlDmo`)?**
+The standard Media Foundation Color Control Transform was the first approach. Its CLSID (`CLSID_CColorControlDmo`) and properties (`MFPKEY_COLOR_BRIGHTNESS` etc.) are valid, but topology insertion failed at runtime with `0x80004001` (`E_NOTIMPL`) because the hardware-accelerated / DX11 pipeline does not support software-style DSP insertion at that stage. The DSP path was removed and replaced entirely by the renderer-level path below.
+
+**What was implemented:**
+
+1. **`IDX11VideoColorControl` custom interface** (`DX11VideoRenderer/Common.h`)
+   - COM-style interface with `SetColorControls(brightness, contrast, hue, saturation)`
+   - Implemented by both `CPresenter` and `CMediaSink` (forwarded to presenter)
+
+2. **Video-processor filter application** (`DX11VideoRenderer/Presenter.cpp`)
+   - `ApplyVideoProcessorColorControls()` maps each `-127..+127` slider value to the D3D11 video-processor filter range via `VideoProcessorSetStreamFilter`
+   - Called every frame inside the video-processor path
+
+3. **Paused-frame color updates via HLSL shader** (`DX11VideoRenderer/Presenter.cpp`)
+   - `SharpenSettings` constant buffer extended with `fBrightness`, `fContrast`, `fHueRadians`, `fSaturation`
+   - The sharpen pass (already used for paused repaint) applies these in YCbCr space: hue rotation, saturation scale, brightness/contrast on luma
+   - This ensures paused-frame slider changes are visible without new decoded frames
+
+4. **C++/CLI bridge properties** (`MediaFoundation.Player/MFVideoPlayer.h/.cpp`)
+   - `VideoPlayer::Brightness/Contrast/Hue/Saturation` properties
+   - On set: queries `m_pVideoDisplay` for `IDX11VideoColorControl` and forwards, then triggers repaint
+
+5. **WPF integration** (`MultiStreamVideoPlayer`)
+   - `NativeMediaPlayer` dependency properties + property-change callbacks
+   - `MainViewModel` observable properties `Brightness`, `Contrast`, `Hue`, `Saturation` with `ColorMin = -127`, `ColorMax = 127`
+   - Four sliders with live value labels added to `MainWindow.xaml`
+
+#### Color Control Ranges
+
+| Control | Range | Default | Effect |
+|---------|-------|---------|--------|
+| Brightness | -127 to +127 | 0 | Shifts luma up/down |
+| Contrast | -127 to +127 | 0 | Scales luma around midpoint |
+| Hue | -127 to +127 | 0 | Rotates CbCr plane (full rotation = ±π) |
+| Saturation | -127 to +127 | 0 | Scales chroma amplitude |
 
 ### Video Sharpening Update (What Was Implemented)
 
@@ -179,7 +220,7 @@ Optional DirectX 11 custom video renderer for advanced scenarios.
 
 3. **Topology Ready State**: The `IMFVideoDisplayControl` can only be retrieved after receiving `MESessionTopologyStatus` with `MF_TOPOSTATUS_READY`.
 
-4. **EVR vs DX11**: Currently using EVR (built-in). DX11VideoRenderer is available but disabled. Enable by setting `USE_DX11_RENDERER = true` in MFVideoPlayer.cpp.
+4. **EVR vs DX11**: The **DX11VideoRenderer is the active renderer** (`USE_DX11_RENDERER = true` in MFVideoPlayer.cpp). EVR is the fallback. Color controls and sharpening require the DX11 renderer.
 
 5. **DX11 GetService Pattern**: For DX11VideoRenderer, `CMediaSink::GetService` must delegate to `CPresenter` for `MR_VIDEO_RENDER_SERVICE` and `MR_VIDEO_ACCELERATION_SERVICE`. This is how Media Foundation gets `IMFVideoDisplayControl` and `IMFDXGIDeviceManager`.
 
@@ -261,8 +302,9 @@ To disable the debug console, remove `AllocConsole()` from `App.xaml.cs`.
 
 ## Future Improvements
 
-- [ ] Enable and test DX11VideoRenderer
-- [ ] Add custom shader effects
+- [x] Enable and integrate DX11VideoRenderer
+- [x] Real-time video sharpening with HLSL shader
+- [x] Runtime color controls (Brightness/Contrast/Hue/Saturation)
 - [ ] Implement HDR support
 - [ ] Add video snapshot capture
 - [ ] Implement playback speed control

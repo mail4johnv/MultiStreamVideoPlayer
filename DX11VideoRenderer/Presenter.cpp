@@ -17,6 +17,7 @@
 #include <io.h>
 #include <fcntl.h>
 #include <cstring>
+#include <algorithm>
 #include <d3dcompiler.h>
 
 using namespace DX11VideoRenderer;
@@ -32,6 +33,10 @@ cbuffer SharpenSettings : register(b0)
 {
     float fSharpenStrength;
     float fThreshold;
+    float fBrightness;
+    float fContrast;
+    float fHueRadians;
+    float fSaturation;
     float2 _Padding;
 };
 
@@ -115,7 +120,16 @@ float4 PSMain(VSOut input) : SV_TARGET
     float edgeMask = step(fThreshold, abs(laplacian));
     float sharpenedY = saturate(centerY + (fSharpenStrength * laplacian * edgeMask));
 
-    float3 outYcc = float3(sharpenedY, ycc.y, ycc.z);
+    // Apply color controls in YCbCr so paused-frame repaints can update visuals without new decode.
+    float hueSin = sin(fHueRadians);
+    float hueCos = cos(fHueRadians);
+    float cb = ycc.y;
+    float cr = ycc.z;
+    float rotCb = (cb * hueCos - cr * hueSin) * fSaturation;
+    float rotCr = (cb * hueSin + cr * hueCos) * fSaturation;
+    float adjustedY = saturate((sharpenedY - 0.5) * fContrast + 0.5 + fBrightness);
+
+    float3 outYcc = float3(adjustedY, rotCb, rotCr);
     float3 outRgb = saturate(YCbCrToRGB(outYcc));
     return float4(outRgb, 1.0);
 }
@@ -198,6 +212,10 @@ CPresenter::CPresenter() :
     m_userSliderValue(0.0f),
     m_userThreshold(0.0f),
     m_bSharpenEnabled(TRUE),
+    m_colorBrightness(0),
+    m_colorContrast(0),
+    m_colorHue(0),
+    m_colorSaturation(0),
     m_bFullScreenState(FALSE),
     m_dwRenderingPrefs(0),
     m_bCanProcessNextSample(TRUE),
@@ -278,6 +296,10 @@ HRESULT CPresenter::QueryInterface(REFIID riid, void** ppv)
     else if (riid == __uuidof(IMFGetService))
     {
         *ppv = static_cast<IMFGetService*>(this);
+    }
+    else if (riid == __uuidof(IDX11VideoColorControl))
+    {
+        *ppv = static_cast<IDX11VideoColorControl*>(this);
     }
     else
     {
@@ -1081,6 +1103,43 @@ HRESULT CPresenter::ProcessFrameUsingVideoProcessor(ID3D11Texture2D* pTexture, U
     return hr;
 }
 
+void CPresenter::ApplyVideoProcessorColorControls(ID3D11VideoContext* pVideoContext)
+{
+    if (!pVideoContext || !m_pVideoProcessor || !m_pVideoProcessorEnum)
+    {
+        return;
+    }
+
+    auto applyFilter = [this, pVideoContext](D3D11_VIDEO_PROCESSOR_FILTER filter, int userValue)
+    {
+        D3D11_VIDEO_PROCESSOR_FILTER_RANGE range = {};
+        HRESULT hrRange = m_pVideoProcessorEnum->GetVideoProcessorFilterRange(filter, &range);
+        if (FAILED(hrRange))
+        {
+            return;
+        }
+
+        int minValue = range.Minimum;
+        int maxValue = range.Maximum;
+        if (maxValue < minValue)
+        {
+            return;
+        }
+
+        float t = static_cast<float>(userValue + 127) / 254.0f;
+        int level = minValue + static_cast<int>((maxValue - minValue) * t);
+        if (level < minValue) level = minValue;
+        if (level > maxValue) level = maxValue;
+
+        pVideoContext->VideoProcessorSetStreamFilter(m_pVideoProcessor, 0, filter, TRUE, level);
+    };
+
+    applyFilter(D3D11_VIDEO_PROCESSOR_FILTER_BRIGHTNESS, m_colorBrightness);
+    applyFilter(D3D11_VIDEO_PROCESSOR_FILTER_CONTRAST, m_colorContrast);
+    applyFilter(D3D11_VIDEO_PROCESSOR_FILTER_HUE, m_colorHue);
+    applyFilter(D3D11_VIDEO_PROCESSOR_FILTER_SATURATION, m_colorSaturation);
+}
+
 void CPresenter::SetVideoContextParameters(ID3D11VideoContext* pVideoContext, const RECT* pSrcRect, const RECT* pDstRect, UINT32 unInterlaceMode)
 {
     // Set frame format
@@ -1105,6 +1164,8 @@ void CPresenter::SetVideoContextParameters(ID3D11VideoContext* pVideoContext, co
     colorSpace.YCbCr_xvYCC = 1;
     pVideoContext->VideoProcessorSetStreamColorSpace(m_pVideoProcessor, 0, &colorSpace);
     pVideoContext->VideoProcessorSetOutputColorSpace(m_pVideoProcessor, &colorSpace);
+
+    ApplyVideoProcessorColorControls(pVideoContext);
     
     // Background color
     D3D11_VIDEO_COLOR bgColor = {};
@@ -1257,6 +1318,27 @@ HRESULT CPresenter::SetUserSharpenThreshold(float thresholdValue)
 
     m_userThreshold = thresholdValue;
     DebugLog("[DX11Presenter] SetUserSharpenThreshold: %.4f\n", m_userThreshold);
+    return S_OK;
+}
+
+HRESULT CPresenter::SetColorControls(int brightness, int contrast, int hue, int saturation)
+{
+    CAutoLock lock(&m_critSec);
+
+    auto clampColor = [](int value) -> int
+    {
+        if (value < -127) return -127;
+        if (value > 127) return 127;
+        return value;
+    };
+
+    m_colorBrightness = clampColor(brightness);
+    m_colorContrast = clampColor(contrast);
+    m_colorHue = clampColor(hue);
+    m_colorSaturation = clampColor(saturation);
+
+    DebugLog("[DX11Presenter] SetColorControls: B=%d C=%d H=%d S=%d\n",
+        m_colorBrightness, m_colorContrast, m_colorHue, m_colorSaturation);
     return S_OK;
 }
 
@@ -1846,11 +1928,21 @@ HRESULT CPresenter::ApplySharpenPass(bool refreshSourceFromBackBuffer)
     SharpenSettingsData settings = {};
     settings.fSharpenStrength = m_userSliderValue * 20.0f;
     settings.fThreshold = m_userThreshold;
+    settings.fBrightness = static_cast<float>(m_colorBrightness) / 254.0f;
+    settings.fContrast = 1.0f + (static_cast<float>(m_colorContrast) / 127.0f);
+    settings.fHueRadians = (static_cast<float>(m_colorHue) / 127.0f) * 3.14159265f;
+    settings.fSaturation = 1.0f + (static_cast<float>(m_colorSaturation) / 127.0f);
 
     static int s_sharpenLogCounter = 0;
     if ((s_sharpenLogCounter++ % 120) == 0)
     {
-        DebugLog("[DX11Presenter] ApplySharpenPass: strength=%.3f threshold=%.4f\n", settings.fSharpenStrength, settings.fThreshold);
+        DebugLog("[DX11Presenter] ApplySharpenPass: strength=%.3f threshold=%.4f b=%.3f c=%.3f h=%.3f s=%.3f\n",
+            settings.fSharpenStrength,
+            settings.fThreshold,
+            settings.fBrightness,
+            settings.fContrast,
+            settings.fHueRadians,
+            settings.fSaturation);
     }
 
     // Runtime constant update from user slider while playback continues.
